@@ -37,11 +37,11 @@ val publishedVersionName = mobwriterValue("mobwriter.versionName", "MOBWRITER_VE
     .takeIf { it.matches(Regex("^[A-Za-z0-9._+-]{1,40}$")) }
 // Release signing passwords come from the environment so they stay off the Gradle command line.
 // The release workflow requires ANDROID_KEYSTORE_* secrets and does not mint a debug key. See release-apk.yml.
-val storeFilePath = mobwriterValue("mobwriter.storeFile", "MOBWRITER_STORE_FILE")
-val storePassword = mobwriterValue("mobwriter.storePassword", "MOBWRITER_STORE_PASSWORD")
-val keyAlias = mobwriterValue("mobwriter.keyAlias", "MOBWRITER_KEY_ALIAS")
-val keyPassword = mobwriterValue("mobwriter.keyPassword", "MOBWRITER_KEY_PASSWORD")
-val hasReleaseKey = listOf(storeFilePath, storePassword, keyAlias, keyPassword).all { it.isNotEmpty() }
+val releaseStoreFile = mobwriterValue("mobwriter.storeFile", "MOBWRITER_STORE_FILE")
+val releaseStorePassword = mobwriterValue("mobwriter.storePassword", "MOBWRITER_STORE_PASSWORD")
+val releaseKeyAlias = mobwriterValue("mobwriter.keyAlias", "MOBWRITER_KEY_ALIAS")
+val releaseKeyPassword = mobwriterValue("mobwriter.keyPassword", "MOBWRITER_KEY_PASSWORD")
+val hasReleaseKey = listOf(releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword).all { it.isNotEmpty() }
 
 android {
     namespace = "dev.mobwriter.app"
@@ -60,10 +60,10 @@ android {
     signingConfigs {
         if (hasReleaseKey) {
             create("release") {
-                storeFile = file(storeFilePath)
-                storePassword = storePassword
-                keyAlias = keyAlias
-                keyPassword = keyPassword
+                storeFile = file(releaseStoreFile)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
             }
         }
     }
