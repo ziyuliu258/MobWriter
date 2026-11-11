@@ -1,0 +1,37 @@
+/.gradle/
+.idea/
+.kotlin/
+local.properties
+*.iml
+/build/
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+.DS_Store
+
+# Local output and signing/configuration secrets
+/dist/
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+keystore.properties
+*.local.*
+_config.private.*
+_multiconfig.yml
+*.pem
+*.key
+
+# Locally installed tools
+/tools/local/
+
+# Editor and OS temporary files
+.vscode/
+*.swp
+*.swo
+*~
+Thumbs.db

@@ -1,0 +1,9 @@
+Use case: logo-brand
+Asset type: final production logo symbol / Android adaptive app icon foreground, square 1024 x 1024 transparent PNG.
+Primary request: Design one refined, memorable logo for 墨哺 (MobWriter), an Android app for writing, formatting, and publishing personal Hexo blog articles from a phone. It should feel like a quiet, beautifully made modern writing tool.
+Subject: A single compact geometric emblem fusing an open book / two folded pages with a fountain-pen nib revealed in the central negative space. The broad page shapes can subtly suggest an M, but the emblem must read primarily as writing and pages. This is one integrated symbol, not a collage of separate icons. Confident, balanced silhouette, gently rounded outer corners, precise clean edges, broad shapes with generous internal spacing readable at 32 pixels.
+Style/medium: Professional minimalist flat vector-style brand mark, delivered as raster. Carefully optically balanced and beautifully proportioned.
+Color palette: Main left page and integrated body in warm ink black #1E1A16; the right folded-page shape in muted cinnabar red #8E3B32. These are the existing application's colors. All negative space genuinely transparent. Only these two flat solid colors plus antialiased edges.
+Composition/framing: One centered isolated symbol, front-facing, approximately 72 percent of canvas width and height, clear equal empty margins. No outer badge or container: the Android system supplies the icon background and mask. Completely transparent canvas.
+Text: none. No wordmark, no lettering.
+Constraints: Strong recognizable silhouette at phone launcher size. Do not draw a literal phone, upload arrows, GitHub logo, multiple separate objects, thin outlines, ornate flourishes, tiny details, cast shadows, gradients, textures, 3D, lighting, mockups, icon grids, sample sheets, captions, watermarks, or a checkerboard pattern. Return only the single finished logo image.

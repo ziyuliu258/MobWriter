@@ -1,0 +1,72 @@
+name: Publish Hexo
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "source/**"
+      - "_config.yml"
+      - "package*.json"
+      - ".github/workflows/publish.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hexo-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare private configuration
+        env:
+          HEXO_PRIVATE_CONFIG: ${{ secrets.HEXO_PRIVATE_CONFIG }}
+          HEXO_DEPLOY_KEY: ${{ secrets.HEXO_DEPLOY_KEY }}
+          HEXO_KNOWN_HOSTS: ${{ secrets.HEXO_KNOWN_HOSTS }}
+          HEXO_SSH_CONFIG: ${{ secrets.HEXO_SSH_CONFIG }}
+        run: |
+          umask 077
+          if [ -n "$HEXO_PRIVATE_CONFIG" ]; then
+            printf '%s\n' "$HEXO_PRIVATE_CONFIG" > _config.private.yml
+          fi
+          if [ -n "$HEXO_DEPLOY_KEY" ]; then
+            if [ -z "$HEXO_KNOWN_HOSTS" ]; then
+              echo "Set HEXO_KNOWN_HOSTS with verified SSH host keys before deploying."
+              exit 1
+            fi
+            mkdir -p ~/.ssh
+            chmod 700 ~/.ssh
+            printf '%s\n' "$HEXO_DEPLOY_KEY" > ~/.ssh/id_deploy
+            printf '%s\n' "$HEXO_KNOWN_HOSTS" > ~/.ssh/known_hosts
+            if [ -n "$HEXO_SSH_CONFIG" ]; then
+              printf '%s\n' "$HEXO_SSH_CONFIG" > ~/.ssh/config
+            fi
+            printf '%s\n' 'GIT_SSH_COMMAND=ssh -i ~/.ssh/id_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes' >> "$GITHUB_ENV"
+          fi
+
+      - name: Generate and deploy
+        run: |
+          if [ -f _config.private.yml ]; then
+            npx hexo clean --config _config.yml,_config.private.yml
+            npx hexo generate --deploy --config _config.yml,_config.private.yml
+          else
+            npx hexo clean
+            npx hexo generate --deploy
+          fi
+
+      - name: Remove private configuration
+        if: always()
+        run: rm -f _config.private.yml _multiconfig.yml ~/.ssh/id_deploy ~/.ssh/config ~/.ssh/known_hosts

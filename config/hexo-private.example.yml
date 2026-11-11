@@ -1,0 +1,10 @@
+# Copy to hexo-private.local.yml and fill locally.
+# Put the completed YAML in the Hexo repository secret HEXO_PRIVATE_CONFIG.
+# Only include fields you actually need to override.
+url: ""
+deploy:
+  type: git
+  repo: ""
+  branch: ""
+  name: ""
+  email: ""
