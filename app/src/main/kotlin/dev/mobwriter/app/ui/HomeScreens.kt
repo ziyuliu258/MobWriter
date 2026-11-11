@@ -24,19 +24,36 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTooltipState
+import androidx.compose.ui.res.painterResource
+import dev.mobwriter.app.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -191,27 +208,50 @@ private fun PostListScreen(
             TopAppBar(
                 modifier = Modifier.statusBarsPadding(),
                 title = { Text("墨哺") },
-                actions = { TextButton(onClick = onSetup) { Text("设置") } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                actions = {
+                    if (loading) {
+                        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = Cinnabar)
+                        }
+                    } else {
+                        AppIconButton("刷新", onClick = { loading = true }) {
+                            Icon(Icons.Outlined.Refresh, contentDescription = "刷新")
+                        }
+                    }
+                    AppIconButton("设置", onClick = onSetup) {
+                        Icon(Icons.Outlined.Settings, contentDescription = "设置")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onNew, containerColor = Cinnabar) {
-                Text("写", color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.padding(horizontal = 8.dp))
+            TooltipBox(
+                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                tooltip = { PlainTooltip { Text("写文章") } },
+                state = rememberTooltipState(),
+            ) {
+                FloatingActionButton(onClick = onNew, containerColor = Cinnabar) {
+                    Icon(Icons.Outlined.Edit, contentDescription = "写文章", tint = MaterialTheme.colorScheme.onPrimary)
+                }
             }
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
-            OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), label = { Text("搜索标题") })
-            Row {
-                TextButton(onClick = { loading = true }) { Text(if (loading) "正在读取" else "刷新") }
-            }
-            error?.let { Text(it, color = Cinnabar) }
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("搜索") },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                singleLine = true,
+            )
+            error?.let { Text(it, color = Cinnabar, modifier = Modifier.padding(top = 8.dp)) }
             LazyColumn(contentPadding = PaddingValues(bottom = 88.dp)) {
                 if (local.isNotEmpty()) {
                     item { Text("手机上的草稿", color = Muted, modifier = Modifier.padding(vertical = 8.dp)) }
                     items(local, key = { it.key + it.savedAt }) { draft ->
-                        PostRow(draft.document.title.ifBlank { "未命名" }, "还没发布", draft.document.tags) {
+                        PostRow(draft.document.title.ifBlank { "未命名" }, "还没发布", draft.document.tags, unpublished = true) {
                             onOpenDraft(draft)
                         }
                     }
@@ -219,10 +259,10 @@ private fun PostListScreen(
                 item { Text("仓库里的文章", color = Muted, modifier = Modifier.padding(vertical = 8.dp)) }
                 val visible = posts.filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
                 items(visible, key = { it.path }) { post ->
-                    PostRow(post.title, post.date, post.tags) { onOpen(post.path) }
+                    PostRow(post.title, post.date, post.tags, unpublished = false) { onOpen(post.path) }
                 }
                 if (!loading && visible.isEmpty() && error == null) {
-                    item { Text("还没有文章。点右下角开始写。", modifier = Modifier.padding(top = 24.dp)) }
+                    item { Text("还没有文章", modifier = Modifier.padding(top = 24.dp)) }
                 }
                 if (loading && posts.isEmpty()) {
                     item {
@@ -237,15 +277,25 @@ private fun PostListScreen(
 }
 
 @Composable
-private fun PostRow(title: String, date: String, tags: List<String>, onClick: () -> Unit) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
-    ) {
-        Text(title, style = MaterialTheme.typography.titleLarge)
-        Text(listOf(date).plus(tags.take(3)).filter { it.isNotBlank() }.joinToString("  ·  "), color = Muted)
+private fun PostRow(title: String, date: String, tags: List<String>, unpublished: Boolean, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = if (unpublished) Icons.Outlined.EditNote else Icons.AutoMirrored.Outlined.Article,
+                contentDescription = null,
+                tint = if (unpublished) Cinnabar else Muted,
+                modifier = Modifier.size(22.dp),
+            )
+            Column(Modifier.padding(start = 14.dp).weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleLarge)
+                val subtitle = listOf(date).plus(tags.take(3)).filter { it.isNotBlank() }.joinToString("  ·  ")
+                if (subtitle.isNotBlank()) Text(subtitle, color = Muted)
+            }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
     }
 }
 
@@ -262,14 +312,44 @@ private fun SetupScreen(initial: BlogSettings, onSave: (BlogSettings) -> Unit, o
     var autoBuild by remember { mutableStateOf(initial.autoBuild) }
     var imageMode by remember { mutableStateOf(initial.imageMode) }
     var showToken by remember { mutableStateOf(false) }
+    val canSave = token.isNotBlank() && owner.isNotBlank() && repo.isNotBlank()
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 modifier = Modifier.statusBarsPadding(),
                 title = { Text("连接 Hexo 仓库") },
-                navigationIcon = { if (onClose != null) TextButton(onClick = onClose) { Text("返回") } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                navigationIcon = {
+                    if (onClose != null) {
+                        AppIconButton("返回", onClick = onClose) {
+                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                        }
+                    }
+                },
+                actions = {
+                    AppIconButton(
+                        label = "保存",
+                        enabled = canSave,
+                        tint = Cinnabar,
+                        onClick = {
+                            onSave(
+                                BlogSettings(
+                                    owner = owner,
+                                    repo = repo,
+                                    branch = branch,
+                                    postsPath = posts,
+                                    imageMode = imageMode,
+                                    autoBuild = autoBuild,
+                                    workflow = workflow,
+                                    token = token,
+                                ),
+                            )
+                        },
+                    ) {
+                        Icon(Icons.Outlined.Check, contentDescription = "保存")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
             )
         },
     ) { padding ->
@@ -281,13 +361,29 @@ private fun SetupScreen(initial: BlogSettings, onSave: (BlogSettings) -> Unit, o
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("令牌只留在这台手机上。仓库、分支和文章目录按你的 Hexo 项目填，不限定站点部署在哪个网址。")
-            OutlinedTextField(token, { token = it }, label = { Text("GitHub 令牌") }, modifier = Modifier.fillMaxWidth(), visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation())
-            TextButton(onClick = { showToken = !showToken }) { Text(if (showToken) "隐藏令牌" else "显示令牌") }
-            TextButton(onClick = {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/settings/tokens/new"))
-                context.startActivity(intent)
-            }) { Text("去 GitHub 创建令牌") }
+            Text("令牌只保存在这台手机上。")
+            OutlinedTextField(
+                value = token,
+                onValueChange = { token = it },
+                label = { Text("GitHub 令牌") },
+                modifier = Modifier.fillMaxWidth(),
+                visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    Row {
+                        AppIconButton(if (showToken) "隐藏令牌" else "显示令牌", onClick = { showToken = !showToken }) {
+                            Icon(
+                                if (showToken) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                contentDescription = if (showToken) "隐藏令牌" else "显示令牌",
+                            )
+                        }
+                        AppIconButton("在 GitHub 创建令牌", onClick = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/settings/tokens/new")))
+                        }) {
+                            Icon(painterResource(R.drawable.ic_github), contentDescription = "在 GitHub 创建令牌")
+                        }
+                    }
+                },
+            )
             OutlinedTextField(owner, { owner = it }, label = { Text("仓库所有者") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(repo, { repo = it }, label = { Text("仓库名") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(branch, { branch = it }, label = { Text("分支") }, modifier = Modifier.fillMaxWidth())
@@ -306,25 +402,6 @@ private fun SetupScreen(initial: BlogSettings, onSave: (BlogSettings) -> Unit, o
                 Switch(checked = autoBuild, onCheckedChange = { autoBuild = it })
             }
             OutlinedTextField(workflow, { workflow = it }, label = { Text("工作流文件名") }, modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = {
-                    onSave(
-                        BlogSettings(
-                            owner = owner,
-                            repo = repo,
-                            branch = branch,
-                            postsPath = posts,
-                            imageMode = imageMode,
-                            autoBuild = autoBuild,
-                            workflow = workflow,
-                            token = token,
-                        ),
-                    )
-                },
-                enabled = token.isNotBlank() && owner.isNotBlank() && repo.isNotBlank(),
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("保存") }
             Spacer(Modifier.height(24.dp))
         }
     }

@@ -40,6 +40,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FormatBold
@@ -57,8 +60,8 @@ import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.Save
-import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material.icons.outlined.Superscript
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -156,8 +159,12 @@ fun EditorScreen(
     }
     viewModel.error?.let { message ->
         Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
-            Text(message, style = MaterialTheme.typography.titleLarge)
-            TextButton(onClick = onBack) { Text("返回") }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AppIconButton("返回", onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                }
+                Text(message, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            }
         }
         return
     }
@@ -169,16 +176,16 @@ fun EditorScreen(
                 TopAppBar(
                     title = {},
                     navigationIcon = {
-                        IconButton(onClick = { leave() }) {
-                            Text("<", fontSize = 28.sp, color = MaterialTheme.colorScheme.onBackground)
+                        AppIconButton("返回", onClick = { leave() }) {
+                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
                         }
                     },
                     actions = {
-                        IconButton(onClick = { viewModel.saveDraftCopy() }) {
+                        AppIconButton("存草稿", onClick = { viewModel.saveDraftCopy() }) {
                             Icon(Icons.Outlined.Save, contentDescription = "存草稿")
                         }
-                        IconButton(onClick = { viewModel.publish(asDraft = false) }) {
-                            Icon(Icons.Outlined.Send, contentDescription = "发布")
+                        AppIconButton("发布", onClick = { viewModel.publish(asDraft = false) }, tint = Cinnabar) {
+                            Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = "发布")
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -228,7 +235,14 @@ fun EditorScreen(
             contentPadding = PaddingValues(vertical = 8.dp),
         ) {
             if (viewModel.fromLocal && viewModel.path != null) {
-                item { TextButton(onClick = viewModel::reloadRemote) { Text("这是手机上还没发布的修改，点此改回线上版本") } }
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("未发布的修改", color = Muted, modifier = Modifier.weight(1f))
+                        AppIconButton("改回线上版本", onClick = viewModel::reloadRemote) {
+                            Icon(Icons.Outlined.Restore, contentDescription = "改回线上版本")
+                        }
+                    }
+                }
             }
             if (viewModel.mode != WriteMode.Reading) {
                 item {
@@ -251,7 +265,7 @@ fun EditorScreen(
                             color = Muted,
                             modifier = Modifier.weight(1f),
                         )
-                        IconButton(onClick = { meta = !meta }) {
+                        AppIconButton("分类、标签和系列", onClick = { meta = !meta }) {
                             Icon(Icons.Outlined.MoreVert, contentDescription = "分类、标签和系列")
                         }
                     }
@@ -402,7 +416,9 @@ private fun MetaEditor(
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         OutlinedTextField(categoryDraft, { categoryDraft = it }, label = { Text("新分类") }, modifier = Modifier.weight(1f))
-        TextButton(onClick = { viewModel.addCategory(categoryDraft); categoryDraft = "" }) { Text("添加") }
+        AppIconButton("添加分类", onClick = { viewModel.addCategory(categoryDraft); categoryDraft = "" }) {
+            Icon(Icons.Outlined.Add, contentDescription = "添加分类")
+        }
     }
     Text("标签", color = Muted, modifier = Modifier.padding(top = 8.dp))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -415,7 +431,9 @@ private fun MetaEditor(
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         OutlinedTextField(tagDraft, { tagDraft = it }, label = { Text("新标签") }, modifier = Modifier.weight(1f))
-        TextButton(onClick = { viewModel.addTag(tagDraft); tagDraft = "" }) { Text("添加") }
+        AppIconButton("添加标签", onClick = { viewModel.addTag(tagDraft); tagDraft = "" }) {
+            Icon(Icons.Outlined.Add, contentDescription = "添加标签")
+        }
     }
     OutlinedTextField(
         viewModel.series,
@@ -459,7 +477,9 @@ private fun BlockCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(blockLabel(item.block), color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
             Box {
-                TextButton(onClick = { menu = true }, contentPadding = PaddingValues(0.dp)) { Text("⋯") }
+                AppIconButton("更多", onClick = { menu = true }) {
+                    Icon(Icons.Outlined.MoreVert, contentDescription = "更多")
+                }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(text = { Text("上移一段") }, onClick = { menu = false; viewModel.move(item.id, false) }, leadingIcon = { Icon(Icons.Outlined.KeyboardArrowUp, null) })
                     DropdownMenuItem(text = { Text("下移一段") }, onClick = { menu = false; viewModel.move(item.id, true) }, leadingIcon = { Icon(Icons.Outlined.KeyboardArrowDown, null) })
@@ -748,16 +768,9 @@ private fun FormatBar(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ToolIcon(label: String, enabled: Boolean, onClick: () -> Unit, icon: @Composable () -> Unit) {
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-        tooltip = { PlainTooltip { Text(label) } },
-        state = rememberTooltipState(),
-    ) {
-        IconButton(onClick = onClick, enabled = enabled) { icon() }
-    }
+    AppIconButton(label = label, onClick = onClick, enabled = enabled, icon = icon)
 }
 
 @Composable
