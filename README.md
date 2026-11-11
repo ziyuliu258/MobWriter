@@ -58,14 +58,14 @@ cd MobWriter
 
 发布内容是 `MobWriter.apk` 和 `update.json`。应用用 `update.json` 里的 `versionCode` 判断是否比已安装的版本新。工作流把 `versionCode` 设为该工作流的运行编号，所以新的一次发布可以盖过上一包。更新地址在构建时写入安装包，源码不写死账号或仓库名。
 
-正式签名需要同时配置这些 Secrets。不要把密钥文件提交到仓库：
+发布包只用一把固定签名，这样后一包才能覆盖安装前一包。不要把密钥文件提交到仓库，把下面四个 Secrets 配齐；缺任何一个时工作流会失败，不会临时生成调试钥匙：
 
 - `ANDROID_KEYSTORE_BASE64`：密钥库的 base64。
 - `ANDROID_KEYSTORE_PASSWORD`
 - `ANDROID_KEY_ALIAS`
 - `ANDROID_KEY_PASSWORD`
 
-四个都没有时，工作流改为构建可安装的调试签名包。调试签名每次运行不同，覆盖安装前要先卸载旧版本。
+标签名里带 `-pre`、`-rc`、`-alpha` 或 `-beta`（例如 `v0.1.0-pre.1`）时，Release 会标成预发布。已经用调试签名装上的旧包签的是另一把钥匙，装这把钥匙的第一包之前要先卸载一次。卸载会清掉手机上的令牌和草稿。
 
 手机上打开「我的」，进入「设置」，点「检查更新」。已配置更新源且 Release 里有更高的 `versionCode` 时，应用下载 APK 并打开系统安装确认；如果系统不允许直接安装，或下载失败，就打开这个 Release 页面。
 

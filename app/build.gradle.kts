@@ -35,8 +35,8 @@ val updateRepo = updateSlug(mobwriterValue("mobwriter.updateRepo", "MOBWRITER_UP
 val publishedVersionCode = mobwriterValue("mobwriter.versionCode", "MOBWRITER_VERSION_CODE").toIntOrNull()?.takeIf { it > 0 }
 val publishedVersionName = mobwriterValue("mobwriter.versionName", "MOBWRITER_VERSION_NAME")
     .takeIf { it.matches(Regex("^[A-Za-z0-9._+-]{1,40}$")) }
-// Optional release signing. Passwords come from the environment so they stay off the Gradle command line.
-// CI sets them from ANDROID_KEYSTORE_* secrets. See .github/workflows/release-apk.yml.
+// Release signing passwords come from the environment so they stay off the Gradle command line.
+// The release workflow requires ANDROID_KEYSTORE_* secrets and does not mint a debug key. See release-apk.yml.
 val storeFilePath = mobwriterValue("mobwriter.storeFile", "MOBWRITER_STORE_FILE")
 val storePassword = mobwriterValue("mobwriter.storePassword", "MOBWRITER_STORE_PASSWORD")
 val keyAlias = mobwriterValue("mobwriter.keyAlias", "MOBWRITER_KEY_ALIAS")
