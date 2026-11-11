@@ -1,0 +1,161 @@
+# 构建可安装的 Android 包，并发布到 GitHub Release。
+# 手机上的「检查更新」读取这个 Release 里的 MobWriter.apk 和 update.json。
+#
+# 正式签名是可选的。四个 Secrets 要同时存在，才会用同一把钥匙签名，
+# 这样新版本才能覆盖安装旧版本。不要把密钥库或口令写进仓库：
+# - ANDROID_KEYSTORE_BASE64：密钥库文件（.jks 或 .keystore）的 base64
+# - ANDROID_KEYSTORE_PASSWORD
+# - ANDROID_KEY_ALIAS
+# - ANDROID_KEY_PASSWORD
+# 这些 Secrets 缺失或不全时，仍会构建一个可安装的调试签名 APK。
+# 调试签名每次运行不同，覆盖安装前需要先卸载旧版本。
+name: Release Android package
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Resolve version
+        id: version
+        run: |
+          code="${GITHUB_RUN_NUMBER}"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            name="${GITHUB_REF_NAME#v}"
+          else
+            name="1.0.${GITHUB_RUN_NUMBER}"
+          fi
+          name="$(printf '%s' "$name" | tr -cd 'A-Za-z0-9._+-')"
+          if [ -z "$name" ]; then
+            name="1.0.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "code=${code}" >> "$GITHUB_OUTPUT"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare signing
+        id: signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "${ANDROID_KEYSTORE_BASE64}" ] && [ -n "${ANDROID_KEYSTORE_PASSWORD}" ] && [ -n "${ANDROID_KEY_ALIAS}" ] && [ -n "${ANDROID_KEY_PASSWORD}" ]; then
+            printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/release.keystore"
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Release signing secrets are absent or incomplete; building an installable debug APK."
+          fi
+
+      - name: Build signed release APK
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          MOBWRITER_STORE_FILE: ${{ runner.temp }}/release.keystore
+          MOBWRITER_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          MOBWRITER_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          MOBWRITER_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: |
+          ./gradlew :app:assembleRelease --no-daemon \
+            -Pmobwriter.updateOwner="${GITHUB_REPOSITORY_OWNER}" \
+            -Pmobwriter.updateRepo="${GITHUB_REPOSITORY#*/}" \
+            -Pmobwriter.versionCode="${VERSION_CODE}" \
+            -Pmobwriter.versionName="${VERSION_NAME}"
+          cp app/build/outputs/apk/release/app-release.apk MobWriter.apk
+
+      - name: Build installable debug APK
+        if: steps.signing.outputs.enabled != 'true'
+        env:
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: |
+          ./gradlew :app:assembleDebug --no-daemon \
+            -Pmobwriter.updateOwner="${GITHUB_REPOSITORY_OWNER}" \
+            -Pmobwriter.updateRepo="${GITHUB_REPOSITORY#*/}" \
+            -Pmobwriter.versionCode="${VERSION_CODE}" \
+            -Pmobwriter.versionName="${VERSION_NAME}"
+          cp app/build/outputs/apk/debug/app-debug.apk MobWriter.apk
+
+      - name: Write update manifest
+        env:
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          manifest = {
+              "versionCode": int(os.environ["VERSION_CODE"]),
+              "versionName": os.environ["VERSION_NAME"],
+              "apkName": "MobWriter.apk",
+          }
+          with open("update.json", "w", encoding="utf-8") as handle:
+              json.dump(manifest, handle, ensure_ascii=False, indent=2)
+              handle.write("\n")
+          PY
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          SIGNED: ${{ steps.signing.outputs.enabled }}
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            tag="${GITHUB_REF_NAME}"
+          elif [ "${GITHUB_RUN_ATTEMPT}" = "1" ]; then
+            tag="build-${GITHUB_RUN_NUMBER}"
+          else
+            tag="build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          fi
+          if [ "$SIGNED" = "true" ]; then
+            sign_note="此包使用仓库里配置的正式签名，可以覆盖安装同一签名的旧版本。"
+          else
+            sign_note="此包使用调试签名。调试签名每次运行都会变化，覆盖安装前需要先卸载旧版本。"
+          fi
+          cat > "${RUNNER_TEMP}/release-notes.md" <<EOF
+          墨哺 ${VERSION_NAME}（${VERSION_CODE}）
+
+          安装包是 \`MobWriter.apk\`。在手机上打开「我的 → 设置 → 检查更新」会读取这个 Release。\`update.json\` 里的 versionCode 比已安装版本更高时，应用下载 APK 并打开系统安装；如果不能直接安装，就打开本页面。
+
+          ${sign_note}
+          EOF
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" MobWriter.apk update.json --clobber
+          else
+            gh release create "$tag" MobWriter.apk update.json \
+              --title "墨哺 ${VERSION_NAME}" \
+              --notes-file "${RUNNER_TEMP}/release-notes.md" \
+              --latest
+          fi
