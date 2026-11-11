@@ -5,7 +5,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -774,11 +774,18 @@ private fun ToolIcon(label: String, enabled: Boolean, onClick: () -> Unit, icon:
 }
 
 @Composable
-private fun QuoteFrame(content: @Composable () -> Unit) {
-    Row(Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min).padding(vertical = 4.dp)) {
-        Box(Modifier.width(3.dp).fillMaxHeight().background(Cinnabar))
-        Column(Modifier.padding(start = 14.dp).weight(1f)) { content() }
-    }
+internal fun QuoteFrame(content: @Composable () -> Unit) {
+    // 行内公式是 SubcomposeLayout，Row 的 IntrinsicSize 会向它要固有高度并直接崩溃。
+    // 色条改在内容背后绘制，高度跟正文走，不再做固有测量。
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .drawBehind {
+                drawRect(color = Cinnabar, size = Size(3.dp.toPx(), size.height))
+            }
+            .padding(start = 17.dp),
+    ) { content() }
 }
 
 @Composable
