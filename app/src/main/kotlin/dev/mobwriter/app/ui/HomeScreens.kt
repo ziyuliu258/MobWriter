@@ -262,7 +262,7 @@ private fun PostListScreen(
                     PostRow(post.title, post.date, post.tags, unpublished = false) { onOpen(post.path) }
                 }
                 if (!loading && visible.isEmpty() && error == null) {
-                    item { Text("还没有文章。点右下角开始写。", modifier = Modifier.padding(top = 24.dp)) }
+                    item { Text("还没有文章", modifier = Modifier.padding(top = 24.dp)) }
                 }
                 if (loading && posts.isEmpty()) {
                     item {

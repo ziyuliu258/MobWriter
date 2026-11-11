@@ -60,6 +60,7 @@ import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Superscript
 import androidx.compose.ui.graphics.graphicsLayer
@@ -234,7 +235,14 @@ fun EditorScreen(
             contentPadding = PaddingValues(vertical = 8.dp),
         ) {
             if (viewModel.fromLocal && viewModel.path != null) {
-                item { TextButton(onClick = viewModel::reloadRemote) { Text("这是手机上还没发布的修改，点此改回线上版本") } }
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("未发布的修改", color = Muted, modifier = Modifier.weight(1f))
+                        AppIconButton("改回线上版本", onClick = viewModel::reloadRemote) {
+                            Icon(Icons.Outlined.Restore, contentDescription = "改回线上版本")
+                        }
+                    }
+                }
             }
             if (viewModel.mode != WriteMode.Reading) {
                 item {
