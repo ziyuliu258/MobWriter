@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,9 +28,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
@@ -41,6 +45,9 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.RadioButton
@@ -79,10 +86,11 @@ import dev.mobwriter.app.data.ImageIntake
 import dev.mobwriter.app.data.SettingsStore
 import dev.mobwriter.app.data.StoredDraft
 
-private sealed interface Screen {
-    data object Setup : Screen
-    data object Posts : Screen
-    data class Edit(val remotePath: String?, val draftKey: String) : Screen
+internal enum class MainTab { Home, Me }
+
+private sealed interface Overlay {
+    data object Settings : Overlay
+    data class Edit(val remotePath: String?, val draftKey: String) : Overlay
 }
 
 @Composable
@@ -121,41 +129,57 @@ private fun AppContent() {
     val settingsStore = remember { SettingsStore(context) }
     val drafts = remember { DraftStore(context) }
     var settings by remember { mutableStateOf(settingsStore.load()) }
-    val stack = remember {
-        mutableStateListOf<Screen>(if (settings.token.isBlank()) Screen.Setup else Screen.Posts)
+    var tab by remember { mutableStateOf(if (settings.token.isBlank()) MainTab.Me else MainTab.Home) }
+    val overlay = remember {
+        mutableStateListOf<Overlay>().apply {
+            if (settings.token.isBlank()) add(Overlay.Settings)
+        }
     }
     val blog = remember(settings.token, settings.owner, settings.repo, settings.branch, settings.postsPath, settings.imageMode, settings.autoBuild, settings.workflow) {
         BlogService(GitHubClient(OkHttpTransport(), settings.token), settings)
     }
     var knownTags by remember { mutableStateOf<List<String>>(emptyList()) }
     var knownCategories by remember { mutableStateOf<List<String>>(emptyList()) }
-    BackHandler(enabled = stack.size > 1) { stack.removeAt(stack.lastIndex) }
-    when (val screen = stack.last()) {
-        Screen.Setup -> SetupScreen(
+    fun pop() {
+        if (overlay.isNotEmpty()) overlay.removeAt(overlay.lastIndex)
+    }
+    BackHandler(enabled = overlay.isNotEmpty(), onBack = ::pop)
+    val bottomBar: @Composable () -> Unit = { MobBottomBar(tab) { tab = it } }
+    when (val screen = overlay.lastOrNull()) {
+        null -> when (tab) {
+            MainTab.Home -> PostListScreen(
+                blog = blog,
+                drafts = drafts,
+                onOpen = { path -> overlay.add(Overlay.Edit(path, DraftStore.keyForRemote(path))) },
+                onNew = { overlay.add(Overlay.Edit(null, DraftStore.newKey())) },
+                onOpenDraft = { draft ->
+                    overlay.add(Overlay.Edit(draft.document.path, draft.key.ifBlank { DraftStore.newKey() }))
+                },
+                onCatalog = { tags, categories ->
+                    knownTags = tags
+                    knownCategories = categories
+                },
+                bottomBar = bottomBar,
+            )
+            MainTab.Me -> MeScreen(
+                onOpenSettings = {
+                    if (overlay.lastOrNull() != Overlay.Settings) overlay.add(Overlay.Settings)
+                },
+                bottomBar = bottomBar,
+            )
+        }
+        Overlay.Settings -> SetupScreen(
             initial = settings,
             onSave = {
+                val wasFirst = settings.token.isBlank()
                 settingsStore.save(it)
                 settings = settingsStore.load()
-                stack.clear()
-                stack.add(Screen.Posts)
+                overlay.clear()
+                if (wasFirst) tab = MainTab.Home
             },
-            onClose = if (stack.size > 1) ({ stack.removeAt(stack.lastIndex) }) else null,
+            onClose = ::pop,
         )
-        Screen.Posts -> PostListScreen(
-            blog = blog,
-            drafts = drafts,
-            onOpen = { path -> stack.add(Screen.Edit(path, DraftStore.keyForRemote(path))) },
-            onNew = { stack.add(Screen.Edit(null, DraftStore.newKey())) },
-            onSetup = { stack.add(Screen.Setup) },
-            onOpenDraft = { draft ->
-                stack.add(Screen.Edit(draft.document.path, draft.key.ifBlank { DraftStore.newKey() }))
-            },
-            onCatalog = { tags, categories ->
-                knownTags = tags
-                knownCategories = categories
-            },
-        )
-        is Screen.Edit -> {
+        is Overlay.Edit -> {
             val editor = viewModel<EditorViewModel>(
                 key = screen.draftKey,
                 factory = EditorViewModelFactory(blog, drafts, screen.draftKey, screen.remotePath),
@@ -170,23 +194,92 @@ private fun AppContent() {
                 blog = blog,
                 suggestedTags = knownTags,
                 suggestedCategories = knownCategories,
-                onBack = { stack.removeAt(stack.lastIndex) },
+                onBack = ::pop,
                 onPickImage = { picker.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly)) },
             )
         }
     }
 }
 
+@Composable
+internal fun MobBottomBar(tab: MainTab, onSelect: (MainTab) -> Unit) {
+    val colors = NavigationBarItemDefaults.colors(
+        selectedIconColor = Cinnabar,
+        selectedTextColor = Cinnabar,
+        indicatorColor = MaterialTheme.colorScheme.surfaceVariant,
+        unselectedIconColor = Muted,
+        unselectedTextColor = Muted,
+    )
+    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+        NavigationBarItem(
+            selected = tab == MainTab.Home,
+            onClick = { onSelect(MainTab.Home) },
+            icon = { Icon(Icons.Outlined.Home, contentDescription = null) },
+            label = { Text("主页") },
+            colors = colors,
+        )
+        NavigationBarItem(
+            selected = tab == MainTab.Me,
+            onClick = { onSelect(MainTab.Me) },
+            icon = { Icon(Icons.Outlined.Person, contentDescription = null) },
+            label = { Text("我的") },
+            colors = colors,
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PostListScreen(
+internal fun MeScreen(onOpenSettings: () -> Unit, bottomBar: @Composable () -> Unit) {
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                modifier = Modifier.statusBarsPadding(),
+                title = { Text("我的") },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+            )
+        },
+        bottomBar = bottomBar,
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
+            Column(
+                Modifier.fillMaxWidth().padding(vertical = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.mobwriter_logo),
+                    contentDescription = null,
+                    modifier = Modifier.size(72.dp),
+                )
+                Text("墨哺", style = MaterialTheme.typography.headlineMedium, color = Ink)
+                Text("MobWriter", color = Muted, modifier = Modifier.padding(top = 4.dp))
+            }
+            Column(Modifier.fillMaxWidth().clickable(onClick = onOpenSettings)) {
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Outlined.Settings, contentDescription = null, tint = Muted, modifier = Modifier.size(22.dp))
+                    Text("设置", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 14.dp).weight(1f))
+                    Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = Muted)
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun PostListScreen(
     blog: BlogService,
     drafts: DraftStore,
     onOpen: (String) -> Unit,
     onNew: () -> Unit,
-    onSetup: () -> Unit,
     onOpenDraft: (StoredDraft) -> Unit,
     onCatalog: (List<String>, List<String>) -> Unit,
+    bottomBar: @Composable () -> Unit,
 ) {
     var posts by remember { mutableStateOf<List<PostSummary>>(emptyList()) }
     var local by remember { mutableStateOf<List<StoredDraft>>(emptyList()) }
@@ -218,13 +311,11 @@ private fun PostListScreen(
                             Icon(Icons.Outlined.Refresh, contentDescription = "刷新")
                         }
                     }
-                    AppIconButton("设置", onClick = onSetup) {
-                        Icon(Icons.Outlined.Settings, contentDescription = "设置")
-                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
             )
         },
+        bottomBar = bottomBar,
         floatingActionButton = {
             TooltipBox(
                 positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
@@ -301,7 +392,7 @@ private fun PostRow(title: String, date: String, tags: List<String>, unpublished
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SetupScreen(initial: BlogSettings, onSave: (BlogSettings) -> Unit, onClose: (() -> Unit)?) {
+internal fun SetupScreen(initial: BlogSettings, onSave: (BlogSettings) -> Unit, onClose: (() -> Unit)?) {
     val context = LocalContext.current
     var owner by remember { mutableStateOf(initial.owner) }
     var repo by remember { mutableStateOf(initial.repo) }
@@ -318,7 +409,7 @@ private fun SetupScreen(initial: BlogSettings, onSave: (BlogSettings) -> Unit, o
         topBar = {
             TopAppBar(
                 modifier = Modifier.statusBarsPadding(),
-                title = { Text("连接 Hexo 仓库") },
+                title = { Text("设置") },
                 navigationIcon = {
                     if (onClose != null) {
                         AppIconButton("返回", onClick = onClose) {
@@ -361,6 +452,7 @@ private fun SetupScreen(initial: BlogSettings, onSave: (BlogSettings) -> Unit, o
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            UpdateSettingRow()
             Text("令牌只保存在这台手机上。")
             OutlinedTextField(
                 value = token,

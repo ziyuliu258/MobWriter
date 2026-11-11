@@ -1,0 +1,146 @@
+# 构建可安装的 Android 包，并发布到 GitHub Release。
+# 手机上的「检查更新」读取这个 Release 里的 MobWriter.apk 和 update.json。
+#
+# 发布包必须用同一把钥匙签名，新版本才能覆盖安装旧版本。
+# 不要把密钥库或口令写进仓库，放到 Actions Secrets，四个都要有：
+# - ANDROID_KEYSTORE_BASE64：密钥库文件（.jks 或 .keystore）的 base64
+# - ANDROID_KEYSTORE_PASSWORD
+# - ANDROID_KEY_ALIAS
+# - ANDROID_KEY_PASSWORD
+# 缺任何一个时工作流失败，不会临时生成调试钥匙。
+# 标签名含 -pre、-rc、-alpha 或 -beta 时，Release 标为 prerelease。
+name: Release Android package
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Resolve version
+        id: version
+        run: |
+          code="${GITHUB_RUN_NUMBER}"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            name="${GITHUB_REF_NAME#v}"
+          else
+            name="1.0.${GITHUB_RUN_NUMBER}"
+          fi
+          name="$(printf '%s' "$name" | tr -cd 'A-Za-z0-9._+-')"
+          if [ -z "$name" ]; then
+            name="1.0.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "code=${code}" >> "$GITHUB_OUTPUT"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      - name: Require stable signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "${ANDROID_KEYSTORE_BASE64}" ] || [ -z "${ANDROID_KEYSTORE_PASSWORD}" ] || [ -z "${ANDROID_KEY_ALIAS}" ] || [ -z "${ANDROID_KEY_PASSWORD}" ]; then
+            echo "Set all four release signing secrets before publishing. This workflow does not create a debug keystore."
+            echo "Required: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD."
+            exit 1
+          fi
+          printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/release.keystore"
+          if [ ! -s "${RUNNER_TEMP}/release.keystore" ]; then
+            echo "ANDROID_KEYSTORE_BASE64 did not decode to a keystore file."
+            exit 1
+          fi
+
+      - name: Build signed release APK
+        env:
+          MOBWRITER_STORE_FILE: ${{ runner.temp }}/release.keystore
+          MOBWRITER_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          MOBWRITER_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          MOBWRITER_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: |
+          ./gradlew :app:assembleRelease --no-daemon \
+            -Pmobwriter.updateOwner="${GITHUB_REPOSITORY_OWNER}" \
+            -Pmobwriter.updateRepo="${GITHUB_REPOSITORY#*/}" \
+            -Pmobwriter.versionCode="${VERSION_CODE}" \
+            -Pmobwriter.versionName="${VERSION_NAME}"
+          cp app/build/outputs/apk/release/app-release.apk MobWriter.apk
+
+      - name: Write update manifest
+        env:
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          manifest = {
+              "versionCode": int(os.environ["VERSION_CODE"]),
+              "versionName": os.environ["VERSION_NAME"],
+              "apkName": "MobWriter.apk",
+          }
+          with open("update.json", "w", encoding="utf-8") as handle:
+              json.dump(manifest, handle, ensure_ascii=False, indent=2)
+              handle.write("\n")
+          PY
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            tag="${GITHUB_REF_NAME}"
+          elif [ "${GITHUB_RUN_ATTEMPT}" = "1" ]; then
+            tag="build-${GITHUB_RUN_NUMBER}"
+          else
+            tag="build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          fi
+          cat > "${RUNNER_TEMP}/release-notes.md" <<EOF
+          墨哺 ${VERSION_NAME}（${VERSION_CODE}）
+
+          安装包是 \`MobWriter.apk\`，使用仓库 Secrets 里的同一把签名钥匙。\`versionCode\` 更高的包可以覆盖安装上一包。以前用调试签名装上的版本签的是另一把钥匙，需要先卸载一次，再装这把钥匙签的第一包。卸载会清掉手机上的令牌和草稿。
+
+          在手机上打开「我的 → 设置 → 检查更新」。\`update.json\` 里的 versionCode 比已安装版本更高时，应用下载 APK 并打开系统安装；如果不能直接安装，就打开本页面。
+          EOF
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" MobWriter.apk update.json --clobber
+          else
+            release_args=(--title "墨哺 ${VERSION_NAME}" --notes-file "${RUNNER_TEMP}/release-notes.md")
+            if [[ "$tag" == *-pre* || "$tag" == *-rc* || "$tag" == *-alpha* || "$tag" == *-beta* ]]; then
+              release_args+=(--prerelease)
+            else
+              release_args+=(--latest)
+            fi
+            gh release create "$tag" MobWriter.apk update.json "${release_args[@]}"
+          fi

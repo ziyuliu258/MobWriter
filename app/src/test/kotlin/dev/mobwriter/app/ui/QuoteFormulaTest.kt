@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
@@ -75,7 +76,11 @@ class QuoteFormulaTest {
                 }
             }
         }
-        rule.waitForIdle()
+        rule.waitUntil(timeoutMillis = 5_000) {
+            rule.onAllNodesWithContentDescription("\\pi_0").fetchSemanticsNodes().any { node ->
+                node.boundsInRoot.width > 0f && node.boundsInRoot.height > 0f
+            }
+        }
         rule.onNodeWithContentDescription("\\pi_0").assertIsDisplayed()
         rule.onNodeWithTag("article").performTouchInput { swipeUp() }
         rule.waitForIdle()
