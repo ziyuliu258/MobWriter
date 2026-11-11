@@ -1,5 +1,6 @@
 package dev.mobwriter.app.ui
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.foundation.Image
@@ -48,6 +49,7 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
 import org.scilab.forge.jlatexmath.TeXConstants
 import org.scilab.forge.jlatexmath.TeXFormula
+import ru.noties.jlatexmath.JLatexMathAndroid
 import ru.noties.jlatexmath.awt.AndroidGraphics2D
 import java.util.concurrent.Executors
 import kotlin.math.min
@@ -65,6 +67,19 @@ private const val FormulaCacheEntries = 24
 private val mathDispatcher = Executors.newSingleThreadExecutor { runnable ->
     Thread(runnable, "formula").apply { priority = Thread.NORM_PRIORITY - 1 }
 }.asCoroutineDispatcher()
+
+private val mathLock = Any()
+@Volatile private var mathReady = false
+
+/** 字体表在 TeXFormula 的类初始化里加载。没先 init 时失败是 Error，公式线程会把进程带走。 */
+internal fun ensureMathEngine(context: Context) {
+    if (mathReady) return
+    synchronized(mathLock) {
+        if (mathReady) return
+        JLatexMathAndroid.init(context.applicationContext)
+        mathReady = true
+    }
+}
 
 class FormulaBoard {
     private val pictures = object : LinkedHashMap<String, FormulaPicture>(16, 0.75f, true) {}
@@ -93,9 +108,17 @@ internal class FormulaPicture(
     val bytes: Int,
 )
 
-private fun renderFormula(latex: String, emPx: Float, display: Boolean, color: Int, board: FormulaBoard): FormulaPicture? {
+private fun renderFormula(
+    latex: String,
+    emPx: Float,
+    display: Boolean,
+    color: Int,
+    board: FormulaBoard,
+    context: Context,
+): FormulaPicture? {
     val source = latex.trim()
     if (source.isEmpty()) return null
+    ensureMathEngine(context)
     val key = (if (display) "D" else "T") + ":" + emPx.roundToInt() + ":" + color + ":" + source
     board.cached(key)?.let { return it }
     val picture = try {
@@ -118,7 +141,7 @@ private fun renderFormula(latex: String, emPx: Float, display: Boolean, color: I
         icon.paintIcon(null, graphics, 0, 0)
         val baseline = (pad + icon.iconHeight - icon.iconDepth).coerceIn(0, height)
         FormulaPicture(bitmap.asImageBitmap(), width, height, baseline, width * height * 4)
-    } catch (_: Exception) {
+    } catch (_: Throwable) {
         null
     }
     if (picture != null) board.store(key, picture)
@@ -156,12 +179,13 @@ fun FormulaImage(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val emPx = rememberMathEm(style)
     val color = formulaColor(style)
     val key = latex.trim() + ":" + emPx.roundToInt() + ":" + color + ":" + display
     var picture by remember(key) { mutableStateOf(board.cached((if (display) "D" else "T") + ":" + emPx.roundToInt() + ":" + color + ":" + latex.trim())) }
     LaunchedEffect(key) {
-        picture = withContext(mathDispatcher) { renderFormula(latex, emPx, display, color, board) }
+        picture = withContext(mathDispatcher) { renderFormula(latex, emPx, display, color, board, context) }
     }
     val image = picture
     BoxWithConstraints(
@@ -205,6 +229,7 @@ fun InlineRich(
         return
     }
     val density = LocalDensity.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val emPx = rememberMathEm(style)
     val color = formulaColor(style)
     val formulas = remember(parts) { parts.mapNotNull { (it as? InlinePiece.Math)?.latex?.trim() }.filter { it.isNotEmpty() }.distinct() }
@@ -218,7 +243,7 @@ fun InlineRich(
     }
     LaunchedEffect(cacheKey) {
         pictures = withContext(mathDispatcher) {
-            formulas.mapNotNull { latex -> renderFormula(latex, emPx, display = false, color, board)?.let { latex to it } }.toMap()
+            formulas.mapNotNull { latex -> renderFormula(latex, emPx, display = false, color, board, context)?.let { latex to it } }.toMap()
         }
     }
     val measurer = rememberTextMeasurer()
