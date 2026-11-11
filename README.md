@@ -45,11 +45,7 @@ cd MobWriter
 
 发布会把 Markdown 提交到文章目录。应用中打开了自动构建，且仓库里有对应工作流时，发布后会触发该工作流。
 
-[`deploy/publish.yml`](deploy/publish.yml) 可以复制为 Hexo 仓库的 `.github/workflows/publish.yml`。它使用该项目自己的 Hexo 配置执行 `hexo generate --deploy`。请在博客项目中安装所选部署方式需要的插件。
-
-私有域名、部署地址和密钥不要写入工作流或公开配置。可参考 `config/hexo-private.example.yml` 准备私有配置，并把内容设为仓库 Secret `HEXO_PRIVATE_CONFIG`。工作流会把它作为第二份配置合并，见 [Hexo 多配置说明](https://hexo.io/docs/configuration#Using-an-Alternate-Config)。通过 Git SSH 部署时，还需要 `HEXO_DEPLOY_KEY` 和已核验的 `HEXO_KNOWN_HOSTS`；自定义 SSH 配置放在 `HEXO_SSH_CONFIG`。
-
-没有这份工作流时，文章仍会写入仓库，站点在下次部署后更新。
+把 [`deploy/publish.yml`](deploy/publish.yml) 复制为 Hexo 仓库的 `.github/workflows/publish.yml`。私密配置和密钥的写法在模板里。没有这份工作流时，文章仍会写入仓库，站点在下次部署后更新。
 
 ## 开发
 

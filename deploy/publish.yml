@@ -1,3 +1,11 @@
+# 复制为 Hexo 仓库的 .github/workflows/publish.yml。
+# 不要把私密配置或密钥写进这个文件，放到仓库 Secrets：
+# - HEXO_PRIVATE_CONFIG：可选的第二份 Hexo 配置，与 _config.yml 合并。
+#   只写入需要覆盖的字段，例如 url 和 deploy。
+#   https://hexo.io/docs/configuration#Using-an-Alternate-Config
+# - HEXO_DEPLOY_KEY：Git SSH 部署私钥。同时设置已核验的 HEXO_KNOWN_HOSTS。
+# - HEXO_SSH_CONFIG：可选的 SSH 配置。
+# 博客项目需自行安装所选部署方式对应的 Hexo 插件。
 name: Publish Hexo
 
 on:
