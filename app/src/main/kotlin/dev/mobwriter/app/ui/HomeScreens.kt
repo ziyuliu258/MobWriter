@@ -452,6 +452,7 @@ internal fun SetupScreen(initial: BlogSettings, onSave: (BlogSettings) -> Unit, 
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            UpdateSettingRow()
             Text("令牌只保存在这台手机上。")
             OutlinedTextField(
                 value = token,

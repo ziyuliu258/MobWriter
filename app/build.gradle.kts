@@ -11,6 +11,38 @@ kotlin {
     }
 }
 
+fun mobwriterValue(property: String, env: String): String {
+    val fromProperty = providers.gradleProperty(property).orNull?.trim().orEmpty()
+    if (fromProperty.isNotEmpty()) return fromProperty
+    return System.getenv(env)?.trim().orEmpty()
+}
+
+fun updateSlug(value: String): String {
+    val trimmed = value.trim()
+    if (trimmed.isEmpty()) return ""
+    val ok = trimmed.matches(Regex("^[A-Za-z0-9_.-]{1,100}$")) &&
+        !trimmed.contains("..") &&
+        !trimmed.startsWith(".") &&
+        !trimmed.startsWith("-") &&
+        !trimmed.endsWith(".") &&
+        !trimmed.endsWith("-")
+    require(ok) { "Update repository owner and name must be GitHub slugs" }
+    return trimmed
+}
+
+val updateOwner = updateSlug(mobwriterValue("mobwriter.updateOwner", "MOBWRITER_UPDATE_OWNER"))
+val updateRepo = updateSlug(mobwriterValue("mobwriter.updateRepo", "MOBWRITER_UPDATE_REPO"))
+val publishedVersionCode = mobwriterValue("mobwriter.versionCode", "MOBWRITER_VERSION_CODE").toIntOrNull()?.takeIf { it > 0 }
+val publishedVersionName = mobwriterValue("mobwriter.versionName", "MOBWRITER_VERSION_NAME")
+    .takeIf { it.matches(Regex("^[A-Za-z0-9._+-]{1,40}$")) }
+// Optional release signing. Passwords come from the environment so they stay off the Gradle command line.
+// CI sets them from ANDROID_KEYSTORE_* secrets. See .github/workflows/release-apk.yml.
+val storeFilePath = mobwriterValue("mobwriter.storeFile", "MOBWRITER_STORE_FILE")
+val storePassword = mobwriterValue("mobwriter.storePassword", "MOBWRITER_STORE_PASSWORD")
+val keyAlias = mobwriterValue("mobwriter.keyAlias", "MOBWRITER_KEY_ALIAS")
+val keyPassword = mobwriterValue("mobwriter.keyPassword", "MOBWRITER_KEY_PASSWORD")
+val hasReleaseKey = listOf(storeFilePath, storePassword, keyAlias, keyPassword).all { it.isNotEmpty() }
+
 android {
     namespace = "dev.mobwriter.app"
     compileSdk = 35
@@ -19,13 +51,29 @@ android {
         applicationId = "dev.mobwriter.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = publishedVersionCode ?: 1
+        versionName = publishedVersionName ?: "1.0.0"
+        buildConfigField("String", "UPDATE_OWNER", "\"$updateOwner\"")
+        buildConfigField("String", "UPDATE_REPO", "\"$updateRepo\"")
+    }
+
+    signingConfigs {
+        if (hasReleaseKey) {
+            create("release") {
+                storeFile = file(storeFilePath)
+                storePassword = storePassword
+                keyAlias = keyAlias
+                keyPassword = keyPassword
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (hasReleaseKey) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
@@ -36,6 +84,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {
@@ -60,6 +109,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
     implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
