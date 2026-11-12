@@ -51,10 +51,10 @@ cd MobWriter
 
 ## 在手机上安装新版本
 
-[`.github/workflows/release-apk.yml`](.github/workflows/release-apk.yml) 会构建安装包并发布到 GitHub Release。两种触发方式：
+[`.github/workflows/release-apk.yml`](.github/workflows/release-apk.yml) 会构建安装包并发布到 GitHub Release。合并到 `master` 之后，工作流先跑仓库测试；测试通过才按已有正式标签把修订号加一，推送下一个标签，并只发布一次。已有 `v0.1.1` 时，下一个是 `v0.1.2`。另外两种方式仍然可用：
 
-- 推送 `v*` 标签，例如 `v1.2.0`。
-- 在 GitHub 的 Actions 页面手动运行 Release Android package。
+- 推送正式版本标签，例如 `v1.2.0`。标签使用 `v主版本.次版本.修订号`，新的发布会标成最新版本。
+- 在 GitHub 的 Actions 页面手动运行 Release Android package。它同样先跑测试，通过后发布下一个正式版本，不会另打非正式包。
 
 发布内容是 `MobWriter.apk` 和 `update.json`。应用用 `update.json` 里的 `versionCode` 判断是否比已安装的版本新。工作流把 `versionCode` 设为该工作流的运行编号，所以新的一次发布可以盖过上一包。更新地址在构建时写入安装包，源码不写死账号或仓库名。
 
@@ -65,7 +65,7 @@ cd MobWriter
 - `ANDROID_KEY_ALIAS`
 - `ANDROID_KEY_PASSWORD`
 
-标签名里带 `-pre`、`-rc`、`-alpha` 或 `-beta`（例如 `v0.1.0-pre.1`）时，Release 会标成预发布。已经用调试签名装上的旧包签的是另一把钥匙，装这把钥匙的第一包之前要先卸载一次。卸载会清掉手机上的令牌和草稿。
+同一次合并只会发布一个包。自动推送的标签不会再启动第二次发布，也不会移动已经存在的标签。已经用调试签名装上的旧包签的是另一把钥匙，装这把钥匙的第一包之前要先卸载一次。卸载会清掉手机上的令牌和草稿。
 
 手机上打开「我的」，进入「设置」，点「检查更新」。已配置更新源且 Release 里有更高的 `versionCode` 时，应用下载 APK 并打开系统安装确认；如果系统不允许直接安装，或下载失败，就打开这个 Release 页面。
 

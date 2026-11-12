@@ -1,6 +1,17 @@
 # 构建可安装的 Android 包，并发布到 GitHub Release。
 # 手机上的「检查更新」读取这个 Release 里的 MobWriter.apk 和 update.json。
 #
+# 合并到 master，或手动运行这个工作流时，都先跑仓库测试。
+# 测试通过才计算下一个正式版本标签并推送，然后只发布一次。
+# 版本按已有的 v主.次.修订 标签加一：已有 v0.1.1 时，下一个是 v0.1.2。
+# 新的发布标成最新版本。不使用 build 标签，也不使用 1.0.运行编号 这种版本名。
+#
+# 用本仓库的 GITHUB_TOKEN 推送标签不会再触发工作流，所以自动标签本身不会打出第二个包。
+# 测试通过后，同一次运行里的发布任务构建并上传这一个包。
+# 若这个标签推送仍然冒出一次运行，发布任务会跳过 github-actions[bot]，
+# 并且同一个版本标签不会并行构建。人工推送的正式标签仍发布该标签，不会再分配下一个号。
+# 已有标签不会被覆盖或移动，包括 v0.1.0。
+#
 # 发布包必须用同一把钥匙签名，新版本才能覆盖安装旧版本。
 # 不要把密钥库或口令写进仓库，放到 Actions Secrets，四个都要有：
 # - ANDROID_KEYSTORE_BASE64：密钥库文件（.jks 或 .keystore）的 base64
@@ -8,11 +19,12 @@
 # - ANDROID_KEY_ALIAS
 # - ANDROID_KEY_PASSWORD
 # 缺任何一个时工作流失败，不会临时生成调试钥匙。
-# 标签名含 -pre、-rc、-alpha 或 -beta 时，Release 标为 prerelease。
 name: Release Android package
 
 on:
   push:
+    branches:
+      - master
     tags:
       - "v*"
   workflow_dispatch:
@@ -25,12 +37,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
+  test-and-tag:
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'push' && github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Check version selection
+        run: python3 scripts/next-official-tag.py --self-test
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -46,23 +68,281 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Resolve version
-        id: version
+      - name: Run repository tests
+        run: ./gradlew :core:test :app:test :app:lintDebug --no-daemon
+
+      - name: Push the next official tag
+        id: tag
+        env:
+          TARGET_SHA: ${{ github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
         run: |
-          code="${GITHUB_RUN_NUMBER}"
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            name="${GITHUB_REF_NAME#v}"
-          else
-            name="1.0.${GITHUB_RUN_NUMBER}"
-          fi
-          name="$(printf '%s' "$name" | tr -cd 'A-Za-z0-9._+-')"
-          if [ -z "$name" ]; then
-            name="1.0.${GITHUB_RUN_NUMBER}"
-          fi
-          echo "code=${code}" >> "$GITHUB_OUTPUT"
-          echo "name=${name}" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+          import sys
+
+          official = re.compile(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\Z")
+          sha = os.environ["TARGET_SHA"]
+          blocked = ("-pre", "-rc", "-alpha", "-beta")
+
+          def next_tag() -> str:
+              raw = subprocess.check_output(
+                  ["git", "ls-remote", "--tags", "origin", "refs/tags/v*"],
+                  text=True,
+              )
+              tag = subprocess.check_output(
+                  ["python3", "scripts/next-official-tag.py"],
+                  input=raw,
+                  text=True,
+              ).strip()
+              if official.fullmatch(tag) is None or any(piece in tag.lower() for piece in blocked):
+                  sys.exit("refusing unofficial tag")
+              return tag
+
+          def remote_commit(tag: str) -> str:
+              raw = subprocess.check_output(
+                  [
+                      "git",
+                      "ls-remote",
+                      "--tags",
+                      "origin",
+                      f"refs/tags/{tag}",
+                      f"refs/tags/{tag}^{{}}",
+                  ],
+                  text=True,
+              )
+              commit = ""
+              for line in raw.splitlines():
+                  if not line.strip():
+                      continue
+                  found, ref = line.split()
+                  if ref.endswith("^{}"):
+                      return found
+                  commit = found
+              return commit
+
+          chosen = ""
+          for _ in range(8):
+              tag = next_tag()
+              current = remote_commit(tag)
+              if current == sha:
+                  chosen = tag
+                  break
+              if current:
+                  # This tag belongs to another commit. Never move it.
+                  continue
+              # Drop a tag that exists only in this checkout. Never delete a remote tag.
+              subprocess.run(
+                  ["git", "tag", "-d", tag],
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL,
+              )
+              subprocess.check_call(["git", "tag", tag, sha])
+              pushed = subprocess.run(
+                  ["git", "push", "origin", f"refs/tags/{tag}:refs/tags/{tag}"]
+              )
+              landed = remote_commit(tag)
+              if landed == sha:
+                  chosen = tag
+                  break
+              subprocess.run(
+                  ["git", "tag", "-d", tag],
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL,
+              )
+              if pushed.returncode != 0 and not landed:
+                  sys.exit("failed to push the new tag; existing tags were left untouched")
+          if not chosen:
+              sys.exit("could not allocate an official tag")
+          if remote_commit(chosen) != sha:
+              sys.exit("refusing to publish because the tag does not point at this commit")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"tag={chosen}\n")
+          print(f"Official tag {chosen} points at this commit.")
+          PY
+
+  publish:
+    needs: test-and-tag
+    # Master merges and manual runs publish only after tests choose one official tag.
+    # A tag push created with GITHUB_TOKEN does not publish again. Human tag pushes still do.
+    if: >-
+      !cancelled() && (
+        (github.event_name == 'workflow_dispatch'
+          && needs.test-and-tag.result == 'success')
+        || (github.event_name == 'push'
+            && startsWith(github.ref, 'refs/tags/v')
+            && github.actor != 'github-actions[bot]'
+            && github.event.pusher.name != 'github-actions[bot]')
+        || (github.event_name == 'push'
+            && github.ref == 'refs/heads/master'
+            && needs.test-and-tag.result == 'success')
+      )
+    concurrency:
+      group: publish-${{ needs.test-and-tag.outputs.tag || github.ref_name }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Resolve release
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_NUMBER: ${{ github.run_number }}
+          PLANNED_TAG: ${{ needs.test-and-tag.outputs.tag }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+          import subprocess
+          import sys
+          import tempfile
+
+          ref = os.environ["GITHUB_REF"]
+          ref_name = os.environ["GITHUB_REF_NAME"]
+          run_number = os.environ["RUN_NUMBER"]
+          planned = os.environ.get("PLANNED_TAG", "").strip()
+          blocked = ("-pre", "-rc", "-alpha", "-beta")
+          official = re.compile(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\Z")
+          event = os.environ["GITHUB_EVENT_NAME"]
+          cuts_next_release = event == "workflow_dispatch" or (event == "push" and ref == "refs/heads/master")
+
+          if cuts_next_release:
+              if official.fullmatch(planned) is None:
+                  sys.exit("official publish is missing its version tag")
+              tag = planned
+              name = planned[1:]
+          elif event == "push" and ref.startswith("refs/tags/"):
+              tag = ref_name
+              name = ref_name[1:] if ref_name.startswith("v") else ref_name
+          else:
+              sys.exit("refusing to publish without an official version tag")
+          if tag.lower() == "latest" or tag.lower().startswith("build-") or any(piece in tag.lower() for piece in blocked):
+              sys.exit("refusing this tag; existing tags and releases were left unchanged")
+          if official.fullmatch(tag) is None or name != tag[1:]:
+              sys.exit("refusing an unofficial version; existing tags were left unchanged")
+          if not run_number.isdigit() or int(run_number) <= 0:
+              sys.exit("refusing an unusable version code")
+
+          def output(**values: str) -> None:
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+                  for key, value in values.items():
+                      handle.write(f"{key}={value}\n")
+
+          view = subprocess.run(
+              ["gh", "release", "view", tag, "--json", "assets,isPrerelease,tagName"],
+              stdout=subprocess.PIPE,
+              stderr=subprocess.PIPE,
+              text=True,
+          )
+          release = None
+          if view.returncode == 0:
+              release = json.loads(view.stdout)
+          else:
+              detail = (view.stderr or "").lower()
+              if "not found" not in detail:
+                  sys.exit("could not read the existing release")
+
+          if release is not None and release.get("isPrerelease"):
+              sys.exit("refusing to replace an existing non-final release")
+
+          names = []
+          if release is not None:
+              names = [asset.get("name", "") for asset in release.get("assets", [])]
+          has_apk = "MobWriter.apk" in names
+          has_json = "update.json" in names
+          if has_apk and has_json:
+              output(skip="true", tag=tag, code="0", name=name, create="false", upload_apk="false", upload_json="false")
+              print(f"Release {tag} already has both packages; not publishing again.")
+              sys.exit(0)
+          if has_apk and not has_json:
+              sys.exit("release has an apk and no manifest; leaving both unchanged")
+
+          def released_codes(except_tag: str) -> int:
+              listed = json.loads(subprocess.check_output(
+                  ["gh", "release", "list", "--limit", "100", "--json", "tagName"],
+                  text=True,
+              ))
+              highest = 0
+              for item in listed:
+                  other = item["tagName"]
+                  if other == except_tag:
+                      continue
+                  with tempfile.TemporaryDirectory() as tmp:
+                      downloaded = subprocess.run(
+                          ["gh", "release", "download", other, "--pattern", "update.json", "--dir", tmp],
+                          stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL,
+                      )
+                      path = pathlib.Path(tmp, "update.json")
+                      if downloaded.returncode != 0 or not path.is_file():
+                          continue
+                      code = int(json.loads(path.read_text(encoding="utf-8"))["versionCode"])
+                      highest = max(highest, code)
+              return highest
+
+          if has_json:
+              with tempfile.TemporaryDirectory() as tmp:
+                  subprocess.check_call(
+                      ["gh", "release", "download", tag, "--pattern", "update.json", "--dir", tmp]
+                  )
+                  manifest = json.loads(pathlib.Path(tmp, "update.json").read_text(encoding="utf-8"))
+              code = int(manifest["versionCode"])
+              name = str(manifest["versionName"])
+              if code <= 0 or name != tag[1:]:
+                  sys.exit("refusing the manifest already attached to this release")
+              create = False
+              upload_apk = True
+              upload_json = False
+          else:
+              code = int(run_number)
+              create = release is None
+              upload_apk = not has_apk
+              upload_json = not has_json
+          previous = released_codes(tag)
+          if code <= previous:
+              sys.exit(f"versionCode {code} is not greater than the previous release versionCode {previous}")
+          output(
+              skip="false",
+              tag=tag,
+              code=str(code),
+              name=name,
+              create="true" if create else "false",
+              upload_apk="true" if upload_apk else "false",
+              upload_json="true" if upload_json else "false",
+          )
+          print(f"Publishing {tag} with versionCode {code}, which is greater than {previous}.")
+          PY
+
+      - name: Checkout
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Java
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        if: steps.gate.outputs.skip != 'true'
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK packages
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Require stable signing
+        if: steps.gate.outputs.skip != 'true'
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -81,13 +361,14 @@ jobs:
           fi
 
       - name: Build signed release APK
+        if: steps.gate.outputs.skip != 'true'
         env:
           MOBWRITER_STORE_FILE: ${{ runner.temp }}/release.keystore
           MOBWRITER_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           MOBWRITER_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           MOBWRITER_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          VERSION_CODE: ${{ steps.version.outputs.code }}
-          VERSION_NAME: ${{ steps.version.outputs.name }}
+          VERSION_CODE: ${{ steps.gate.outputs.code }}
+          VERSION_NAME: ${{ steps.gate.outputs.name }}
         run: |
           ./gradlew :app:assembleRelease --no-daemon \
             -Pmobwriter.updateOwner="${GITHUB_REPOSITORY_OWNER}" \
@@ -97,9 +378,10 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk MobWriter.apk
 
       - name: Write update manifest
+        if: steps.gate.outputs.skip != 'true' && (steps.gate.outputs.create == 'true' || steps.gate.outputs.upload_json == 'true')
         env:
-          VERSION_CODE: ${{ steps.version.outputs.code }}
-          VERSION_NAME: ${{ steps.version.outputs.name }}
+          VERSION_CODE: ${{ steps.gate.outputs.code }}
+          VERSION_NAME: ${{ steps.gate.outputs.name }}
         run: |
           python3 - <<'PY'
           import json, os
@@ -114,33 +396,70 @@ jobs:
           PY
 
       - name: Publish GitHub Release
+        if: steps.gate.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION_NAME: ${{ steps.version.outputs.name }}
-          VERSION_CODE: ${{ steps.version.outputs.code }}
+          TAG: ${{ steps.gate.outputs.tag }}
+          VERSION_NAME: ${{ steps.gate.outputs.name }}
+          VERSION_CODE: ${{ steps.gate.outputs.code }}
+          CREATE: ${{ steps.gate.outputs.create }}
+          UPLOAD_APK: ${{ steps.gate.outputs.upload_apk }}
+          UPLOAD_JSON: ${{ steps.gate.outputs.upload_json }}
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            tag="${GITHUB_REF_NAME}"
-          elif [ "${GITHUB_RUN_ATTEMPT}" = "1" ]; then
-            tag="build-${GITHUB_RUN_NUMBER}"
-          else
-            tag="build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
-          fi
-          cat > "${RUNNER_TEMP}/release-notes.md" <<EOF
-          墨哺 ${VERSION_NAME}（${VERSION_CODE}）
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+          import sys
 
-          安装包是 \`MobWriter.apk\`，使用仓库 Secrets 里的同一把签名钥匙。\`versionCode\` 更高的包可以覆盖安装上一包。以前用调试签名装上的版本签的是另一把钥匙，需要先卸载一次，再装这把钥匙签的第一包。卸载会清掉手机上的令牌和草稿。
+          tag = os.environ["TAG"]
+          name = os.environ["VERSION_NAME"]
+          code = os.environ["VERSION_CODE"]
+          if re.fullmatch(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", tag) is None or name != tag[1:]:
+              sys.exit("refusing an unofficial version")
+          if tag.lower() == "latest" or tag.lower().startswith("build-") or any(piece in tag.lower() for piece in ("-pre", "-rc", "-alpha", "-beta")):
+              sys.exit("refusing this tag")
+          title = f"墨哺 {name}"
+          notes = (
+              f"墨哺 {name}（{code}）\n"
+              "\n"
+              "安装包是 `MobWriter.apk`，使用仓库 Secrets 里的同一把签名钥匙。"
+              "`versionCode` 更高的包可以覆盖安装上一包。"
+              "以前用调试签名装上的版本签的是另一把钥匙，需要先卸载一次，再装这把钥匙签的第一包。"
+              "卸载会清掉手机上的令牌和草稿。\n"
+              "\n"
+              "在手机上打开「我的 → 设置 → 检查更新」。"
+              "`update.json` 里的 versionCode 比已安装版本更高时，应用下载 APK 并打开系统安装；"
+              "如果不能直接安装，就打开本页面。\n"
+          )
+          forbidden = ("预发布", "pre-release", "prerelease", "pre release")
+          lowered = f"{title}\n{notes}".lower()
+          if any(word.lower() in lowered for word in forbidden):
+              sys.exit("release text was rejected")
+          notes_path = os.path.join(os.environ["RUNNER_TEMP"], "release-notes.md")
+          with open(notes_path, "w", encoding="utf-8") as handle:
+              handle.write(notes)
 
-          在手机上打开「我的 → 设置 → 检查更新」。\`update.json\` 里的 versionCode 比已安装版本更高时，应用下载 APK 并打开系统安装；如果不能直接安装，就打开本页面。
-          EOF
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" MobWriter.apk update.json --clobber
-          else
-            release_args=(--title "墨哺 ${VERSION_NAME}" --notes-file "${RUNNER_TEMP}/release-notes.md")
-            if [[ "$tag" == *-pre* || "$tag" == *-rc* || "$tag" == *-alpha* || "$tag" == *-beta* ]]; then
-              release_args+=(--prerelease)
-            else
-              release_args+=(--latest)
-            fi
-            gh release create "$tag" MobWriter.apk update.json "${release_args[@]}"
-          fi
+          if os.environ["CREATE"] == "true":
+              command = [
+                  "gh", "release", "create", tag,
+                  "MobWriter.apk", "update.json",
+                  "--title", title,
+                  "--notes-file", notes_path,
+                  "--latest",
+              ]
+              exists = subprocess.run(
+                  ["gh", "api", f"repos/{os.environ['GITHUB_REPOSITORY']}/git/ref/tags/{tag}"],
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL,
+              )
+              if exists.returncode != 0:
+                  command.extend(["--target", os.environ["GITHUB_SHA"]])
+              subprocess.check_call(command)
+          else:
+              if os.environ["UPLOAD_APK"] == "true":
+                  subprocess.check_call(["gh", "release", "upload", tag, "MobWriter.apk"])
+              if os.environ["UPLOAD_JSON"] == "true":
+                  subprocess.check_call(["gh", "release", "upload", tag, "update.json"])
+          print(f"Published {tag} once.")
+          PY
