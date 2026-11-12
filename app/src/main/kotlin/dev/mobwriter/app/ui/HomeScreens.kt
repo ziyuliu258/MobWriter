@@ -727,7 +727,7 @@ internal fun SetupScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (showUpdate) UpdateSettingRow()
-            Text(if (savedToken.isNotBlank()) "令牌只保存在这台手机上。留空则保持原来的令牌。" else "令牌只保存在这台手机上。")
+            Text(if (savedToken.isNotBlank()) "令牌只保存在这台手机上。已保存，留空则保持不变。" else "令牌只保存在这台手机上。")
             OutlinedTextField(
                 value = token,
                 onValueChange = { token = it },

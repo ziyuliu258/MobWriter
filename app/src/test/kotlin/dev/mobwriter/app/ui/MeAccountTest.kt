@@ -185,7 +185,7 @@ class MeAccountTest {
         }
         rule.onNodeWithText("token-alpha-kept").assertDoesNotExist()
         rule.onNodeWithText("显示令牌").assertDoesNotExist()
-        rule.onNodeWithText("留空则保持原来的令牌", substring = true).assertIsDisplayed()
+        rule.onNodeWithText("已保存，留空则保持不变", substring = true).assertIsDisplayed()
         rule.onNodeWithContentDescription("保存").performClick()
         rule.runOnIdle {
             assertEquals("token-alpha-kept", saved?.token)

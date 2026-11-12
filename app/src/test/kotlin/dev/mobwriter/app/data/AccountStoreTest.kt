@@ -49,6 +49,50 @@ class AccountStoreTest {
         assertEquals("旧草稿", DraftStore(context, session.active!!.id).load("n-old")?.document?.title)
         assertFalse(File(root, "n-old.json").exists())
         assertEquals(session.active?.id, AccountStore(prefs).load().activeId)
+        assertFalse(prefs.contains("owner"))
+        assertFalse(prefs.contains("repo"))
+        assertFalse(prefs.contains("token"))
+    }
+
+    @Test
+    fun deletingTheMigratedAccountRemovesLeftoverTokenKeys() {
+        val prefs = context.getSharedPreferences("legacy-delete", Context.MODE_PRIVATE)
+        prefs.edit().clear()
+            .putString("owner", "alpha")
+            .putString("repo", "blog")
+            .putString("branch", "main")
+            .putString("posts", "source/_posts")
+            .putString("images", "post")
+            .putBoolean("auto", true)
+            .putString("workflow", "publish.yml")
+            .putString("token", "token-alpha-kept")
+            .commit()
+        val store = AccountStore(prefs)
+        val migrated = store.load()
+        store.save(migrated.remove(migrated.activeId!!))
+        assertTrue(store.load().accounts.isEmpty())
+        assertFalse(prefs.contains("token"))
+        assertFalse(prefs.contains("owner"))
+        assertFalse(prefs.contains("repo"))
+        assertFalse(prefs.contains("branch"))
+        assertFalse(prefs.contains("posts"))
+        assertFalse(prefs.contains("images"))
+        assertFalse(prefs.contains("auto"))
+        assertFalse(prefs.contains("workflow"))
+        assertFalse(prefs.getString("accounts", "").orEmpty().contains("token-alpha-kept"))
+    }
+
+    @Test
+    fun loadDropsLeftoverLegacyKeysWithoutDroppingTheSavedToken() {
+        val prefs = context.getSharedPreferences("leftover-keys", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val store = AccountStore(prefs)
+        store.save(AccountSession().add(BlogSettings(owner = "alpha", repo = "blog", token = "token-alpha-kept"), "a"))
+        prefs.edit().putString("token", "token-alpha-kept").putString("owner", "alpha").commit()
+        val loaded = store.load()
+        assertEquals("token-alpha-kept", loaded.active?.settings?.token)
+        assertFalse(prefs.contains("token"))
+        assertFalse(prefs.contains("owner"))
     }
 
     @Test
