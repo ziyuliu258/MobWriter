@@ -54,7 +54,7 @@ cd MobWriter
 [`.github/workflows/release-apk.yml`](.github/workflows/release-apk.yml) 会构建安装包并发布到 GitHub Release。合并到 `master` 之后，工作流先跑仓库测试；测试通过才按已有正式标签把修订号加一，推送下一个标签，并只发布一次。已有 `v0.1.1` 时，下一个是 `v0.1.2`。另外两种方式仍然可用：
 
 - 推送正式版本标签，例如 `v1.2.0`。标签使用 `v主版本.次版本.修订号`，新的发布会标成最新版本。
-- 在 GitHub 的 Actions 页面手动运行 Release Android package。
+- 在 GitHub 的 Actions 页面手动运行 Release Android package。它同样先跑测试，通过后发布下一个正式版本，不会另打非正式包。
 
 发布内容是 `MobWriter.apk` 和 `update.json`。应用用 `update.json` 里的 `versionCode` 判断是否比已安装的版本新。工作流把 `versionCode` 设为该工作流的运行编号，所以新的一次发布可以盖过上一包。更新地址在构建时写入安装包，源码不写死账号或仓库名。
 
