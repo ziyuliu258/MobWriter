@@ -16,6 +16,12 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import java.io.File
 
+data class BlogProfile(
+    val author: String = "",
+    val avatar: ByteArray? = null,
+    val avatarMissing: Boolean = false,
+)
+
 class BlogService(
     private val github: GitHubClient,
     val settings: BlogSettings,
@@ -42,6 +48,45 @@ class BlogService(
 
     fun loadImage(repoPath: String): ByteArray =
         github.readBytes(settings.owner, settings.repo, repoPath, settings.branch)
+
+    /**
+     * 读取当前博客的作者名，以及主题正在使用的头像。
+     * 先找仓库 `source` 和主题 `source` 里的文件，再请求公开地址。配置里没有头像时 [BlogProfile.avatarMissing] 为 true。
+     */
+    fun loadProfile(): BlogProfile {
+        if (settings.token.isBlank() || settings.owner.isBlank() || settings.repo.isBlank()) {
+            return BlogProfile(avatarMissing = true)
+        }
+        return runCatching { readProfile() }.getOrDefault(BlogProfile())
+    }
+
+    fun loadAvatar(): ByteArray? = loadProfile().avatar
+
+    private fun readProfile(): BlogProfile {
+        val siteYaml = readOptionalText("_config.yml") ?: return BlogProfile()
+        val author = HexoAvatar.parseAuthor(siteYaml)
+        val site = HexoAvatar.parseSite(siteYaml)
+        if (!HexoAvatar.isThemeName(site.theme)) return BlogProfile(author = author, avatarMissing = true)
+        val avatar = HexoAvatar.chooseAvatar(
+            readOptionalText("_config.${site.theme}.yml"),
+            readOptionalText("themes/${site.theme}/_config.yml"),
+        ) ?: return BlogProfile(author = author, avatarMissing = true)
+        val resolved = HexoAvatar.resolve(site, avatar) ?: return BlogProfile(author = author, avatarMissing = true)
+        resolved.sourcePath?.let { path -> readOptionalBytes(path)?.let { return BlogProfile(author, it, avatarMissing = false) } }
+        resolved.themeSourcePath?.let { path -> readOptionalBytes(path)?.let { return BlogProfile(author, it, avatarMissing = false) } }
+        if (resolved.publicUrl.startsWith("https://") || resolved.publicUrl.startsWith("http://")) {
+            val bytes = runCatching { github.readPublicBytes(resolved.publicUrl) }.getOrNull()
+            if (bytes != null) return BlogProfile(author, bytes, avatarMissing = false)
+        }
+        return BlogProfile(author = author, avatarMissing = false)
+    }
+
+    private fun readOptionalText(path: String): String? =
+        runCatching { github.readText(settings.owner, settings.repo, path, settings.branch).first }.getOrNull()
+
+    private fun readOptionalBytes(path: String): ByteArray? =
+        runCatching { github.readBytes(settings.owner, settings.repo, path, settings.branch) }.getOrNull()
+            ?.takeIf { it.isNotEmpty() }
 
     fun publish(document: PostDocument, asDraft: Boolean = false, retainOriginal: Boolean = false): PublishReport {
         if (document.title.isBlank()) throw BlogException("先写标题。")

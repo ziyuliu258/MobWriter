@@ -154,6 +154,30 @@ class GitHubClient(
         return call("POST", url, payload).code
     }
 
+    /** 拉取站点上的图片。不附带 GitHub 令牌。 */
+    fun readPublicBytes(url: String): ByteArray {
+        val parsed = runCatching { java.net.URI(url) }.getOrElse { throw BlogException("头像地址无效") }
+        val scheme = parsed.scheme?.lowercase()
+        if ((scheme != "https" && scheme != "http") || parsed.host.isNullOrBlank()) {
+            throw BlogException("头像地址无效")
+        }
+        val response = transport.execute(
+            HttpRequest(
+                method = "GET",
+                url = url,
+                headers = mapOf(
+                    "Accept" to "image/*,*/*",
+                    "User-Agent" to "MobWriter",
+                ),
+                body = null,
+            ),
+        )
+        if (response.code !in 200..299 || response.bytes.isEmpty()) {
+            throw BlogException("头像加载失败", response.code)
+        }
+        return response.bytes
+    }
+
     private fun readObject(owner: String, repo: String, path: String, branch: String): JsonObject {
         val response = call("GET", contentsUrl(owner, repo, path, branch), null)
         if (response.code == 404) throw BlogException("找不到 $path", 404)
