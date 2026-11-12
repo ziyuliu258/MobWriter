@@ -1,15 +1,16 @@
 # 构建可安装的 Android 包，并发布到 GitHub Release。
 # 手机上的「检查更新」读取这个 Release 里的 MobWriter.apk 和 update.json。
 #
-# 合并到 master 之后先跑仓库测试。测试通过才计算下一个正式版本标签并推送，
-# 然后只启动一次下面的发布任务。版本按已有的 v主.次.修订 标签加一：
-# 已有 v0.1.1 时，下一个是 v0.1.2。新的发布标成最新版本。
+# 合并到 master，或手动运行这个工作流时，都先跑仓库测试。
+# 测试通过才计算下一个正式版本标签并推送，然后只发布一次。
+# 版本按已有的 v主.次.修订 标签加一：已有 v0.1.1 时，下一个是 v0.1.2。
+# 新的发布标成最新版本。不使用 build 标签，也不使用 1.0.运行编号 这种版本名。
 #
 # 用本仓库的 GITHUB_TOKEN 推送标签不会再触发工作流，所以自动标签本身不会打出第二个包。
-# 测试通过后，同一次 master 运行里的发布任务构建并上传这一个包。
+# 测试通过后，同一次运行里的发布任务构建并上传这一个包。
 # 若这个标签推送仍然冒出一次运行，发布任务会跳过 github-actions[bot]，
-# 并且同一个版本标签不会并行构建。人工推送的正式标签仍走原来的发布任务。
-# 手动 workflow_dispatch 也保留。已有标签不会被覆盖或移动，包括 v0.1.0。
+# 并且同一个版本标签不会并行构建。人工推送的正式标签仍发布该标签，不会再分配下一个号。
+# 已有标签不会被覆盖或移动，包括 v0.1.0。
 #
 # 发布包必须用同一把钥匙签名，新版本才能覆盖安装旧版本。
 # 不要把密钥库或口令写进仓库，放到 Actions Secrets，四个都要有：
@@ -37,7 +38,9 @@ concurrency:
 
 jobs:
   test-and-tag:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'push' && github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
     timeout-minutes: 40
     outputs:
@@ -163,11 +166,12 @@ jobs:
 
   publish:
     needs: test-and-tag
-    # One master merge publishes from this job after tests. A tag push created
-    # with GITHUB_TOKEN does not publish again. Human tag pushes still do.
+    # Master merges and manual runs publish only after tests choose one official tag.
+    # A tag push created with GITHUB_TOKEN does not publish again. Human tag pushes still do.
     if: >-
       !cancelled() && (
-        github.event_name == 'workflow_dispatch'
+        (github.event_name == 'workflow_dispatch'
+          && needs.test-and-tag.result == 'success')
         || (github.event_name == 'push'
             && startsWith(github.ref, 'refs/tags/v')
             && github.actor != 'github-actions[bot]'
@@ -187,7 +191,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_NUMBER: ${{ github.run_number }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
           PLANNED_TAG: ${{ needs.test-and-tag.outputs.tag }}
         run: |
           python3 - <<'PY'
@@ -202,34 +205,28 @@ jobs:
           ref = os.environ["GITHUB_REF"]
           ref_name = os.environ["GITHUB_REF_NAME"]
           run_number = os.environ["RUN_NUMBER"]
-          run_attempt = os.environ["RUN_ATTEMPT"]
           planned = os.environ.get("PLANNED_TAG", "").strip()
           blocked = ("-pre", "-rc", "-alpha", "-beta")
           official = re.compile(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\Z")
+          event = os.environ["GITHUB_EVENT_NAME"]
+          cuts_next_release = event == "workflow_dispatch" or (event == "push" and ref == "refs/heads/master")
 
-          if os.environ["GITHUB_EVENT_NAME"] == "push" and ref == "refs/heads/master":
+          if cuts_next_release:
               if official.fullmatch(planned) is None:
-                  sys.exit("master publish is missing its official tag")
+                  sys.exit("official publish is missing its version tag")
               tag = planned
               name = planned[1:]
-          elif ref.startswith("refs/tags/"):
+          elif event == "push" and ref.startswith("refs/tags/"):
               tag = ref_name
               name = ref_name[1:] if ref_name.startswith("v") else ref_name
-          elif run_attempt == "1":
-              tag = f"build-{run_number}"
-              name = f"1.0.{run_number}"
           else:
-              tag = f"build-{run_number}-{run_attempt}"
-              name = f"1.0.{run_number}"
-          name = "".join(ch for ch in name if ch.isalnum() or ch in "._+-")
-          if not name:
-              name = f"1.0.{run_number}"
-          if tag.lower() == "latest" or any(piece in tag.lower() for piece in blocked):
+              sys.exit("refusing to publish without an official version tag")
+          if tag.lower() == "latest" or tag.lower().startswith("build-") or any(piece in tag.lower() for piece in blocked):
               sys.exit("refusing this tag; existing tags and releases were left unchanged")
-          if re.fullmatch(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)|build-[0-9]+(?:-[0-9]+)?", tag) is None:
-              sys.exit("refusing an unexpected tag; existing tags were left unchanged")
-          if re.fullmatch(r"[A-Za-z0-9._+-]{1,40}", name) is None:
-              sys.exit("refusing version name")
+          if official.fullmatch(tag) is None or name != tag[1:]:
+              sys.exit("refusing an unofficial version; existing tags were left unchanged")
+          if not run_number.isdigit() or int(run_number) <= 0:
+              sys.exit("refusing an unusable version code")
 
           def output(**values: str) -> None:
               with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
@@ -296,7 +293,7 @@ jobs:
                   manifest = json.loads(pathlib.Path(tmp, "update.json").read_text(encoding="utf-8"))
               code = int(manifest["versionCode"])
               name = str(manifest["versionName"])
-              if code <= 0 or re.fullmatch(r"[A-Za-z0-9._+-]{1,40}", name) is None:
+              if code <= 0 or name != tag[1:]:
                   sys.exit("refusing the manifest already attached to this release")
               create = False
               upload_apk = True
@@ -418,9 +415,9 @@ jobs:
           tag = os.environ["TAG"]
           name = os.environ["VERSION_NAME"]
           code = os.environ["VERSION_CODE"]
-          if re.fullmatch(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)|build-[0-9]+(?:-[0-9]+)?", tag) is None:
-              sys.exit("refusing an unexpected tag")
-          if tag.lower() == "latest" or any(piece in tag.lower() for piece in ("-pre", "-rc", "-alpha", "-beta")):
+          if re.fullmatch(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", tag) is None or name != tag[1:]:
+              sys.exit("refusing an unofficial version")
+          if tag.lower() == "latest" or tag.lower().startswith("build-") or any(piece in tag.lower() for piece in ("-pre", "-rc", "-alpha", "-beta")):
               sys.exit("refusing this tag")
           title = f"墨哺 {name}"
           notes = (
