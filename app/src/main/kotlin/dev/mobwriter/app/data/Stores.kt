@@ -1,6 +1,7 @@
 package dev.mobwriter.app.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -8,6 +9,8 @@ import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
+import dev.mobwriter.app.core.model.AccountSession
+import dev.mobwriter.app.core.model.BlogAccount
 import dev.mobwriter.app.core.model.BlogSettings
 import dev.mobwriter.app.core.model.ImageMode
 import dev.mobwriter.app.core.model.PostDocument
@@ -19,21 +22,33 @@ import java.io.FileOutputStream
 import java.util.Base64
 import java.util.UUID
 
-class SettingsStore(context: Context) {
-    private val prefs = runCatching {
-        val masterKey = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
-        EncryptedSharedPreferences.create(
-            "mobwriter.settings",
-            masterKey,
-            context,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
-    }.getOrElse {
-        context.getSharedPreferences("mobwriter.settings.plain", Context.MODE_PRIVATE)
+internal class AccountStore internal constructor(
+    private val prefs: SharedPreferences,
+) {
+    constructor(context: Context) : this(openPrefs(context))
+
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+    fun load(): AccountSession {
+        val raw = prefs.getString(ACCOUNTS, null)
+        if (raw != null) {
+            return runCatching { json.decodeFromString<AccountSession>(raw) }.getOrDefault(AccountSession())
+        }
+        val legacy = readLegacy()
+        if (legacy.owner.isBlank() && legacy.repo.isBlank() && legacy.token.isBlank()) {
+            return AccountSession()
+        }
+        val id = UUID.randomUUID().toString()
+        val session = AccountSession(accounts = listOf(BlogAccount(id, legacy)), activeId = id)
+        save(session)
+        return session
     }
 
-    fun load(): BlogSettings = BlogSettings(
+    fun save(session: AccountSession) {
+        prefs.edit().putString(ACCOUNTS, json.encodeToString(session)).commit()
+    }
+
+    private fun readLegacy(): BlogSettings = BlogSettings(
         owner = prefs.getString("owner", "") ?: "",
         repo = prefs.getString("repo", "") ?: "",
         branch = prefs.getString("branch", "main") ?: "main",
@@ -44,22 +59,26 @@ class SettingsStore(context: Context) {
         token = prefs.getString("token", "") ?: "",
     )
 
-    fun save(settings: BlogSettings) {
-        prefs.edit()
-            .putString("owner", settings.owner.trim())
-            .putString("repo", settings.repo.trim())
-            .putString("branch", settings.branch.trim())
-            .putString("posts", settings.postsPath.trim())
-            .putString("images", if (settings.imageMode == ImageMode.SourceImages) "source" else "post")
-            .putBoolean("auto", settings.autoBuild)
-            .putString("workflow", settings.workflow.trim().ifBlank { "publish.yml" })
-            .putString("token", settings.token.trim())
-            .apply()
+    companion object {
+        private const val ACCOUNTS = "accounts"
+
+        private fun openPrefs(context: Context): SharedPreferences = runCatching {
+            val masterKey = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+            EncryptedSharedPreferences.create(
+                "mobwriter.settings",
+                masterKey,
+                context,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        }.getOrElse {
+            context.getSharedPreferences("mobwriter.settings.plain", Context.MODE_PRIVATE)
+        }
     }
 }
 
-class DraftStore(context: Context) {
-    private val directory = File(context.filesDir, "drafts").apply { mkdirs() }
+class DraftStore(context: Context, accountId: String = "") {
+    private val directory = File(context.filesDir, "drafts/${draftFolderName(accountId)}").apply { mkdirs() }
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = true }
 
     fun save(key: String, document: PostDocument) {
@@ -89,6 +108,42 @@ class DraftStore(context: Context) {
             "p-" + Base64.getUrlEncoder().withoutPadding().encodeToString(path.toByteArray())
 
         fun newKey(): String = "n-" + UUID.randomUUID()
+
+        /** 只删除这一个账号的草稿目录。 */
+        fun deleteAccountFiles(context: Context, accountId: String) {
+            val folder = draftFolderName(accountId)
+            if (folder == SIGNED_OUT) return
+            File(context.filesDir, "drafts/$folder").deleteRecursively()
+        }
+
+        /** 升级前的草稿直接放在 drafts 目录。迁到当时正在使用的账号下面，别的账号碰不到。 */
+        fun migrateLooseDrafts(context: Context, accountId: String?) {
+            val folder = accountId?.let(::draftFolderName) ?: return
+            if (folder == SIGNED_OUT) return
+            val root = File(context.filesDir, "drafts")
+            if (!root.isDirectory) return
+            val loose = root.listFiles { file -> file.isFile && file.extension == "json" }.orEmpty()
+            if (loose.isEmpty()) return
+            val destination = File(root, folder)
+            destination.mkdirs()
+            loose.forEach { file ->
+                val target = File(destination, file.name)
+                if (!target.exists() && !file.renameTo(target)) {
+                    file.copyTo(target, overwrite = false)
+                }
+                if (target.exists()) file.delete()
+            }
+        }
+
+        private fun draftFolderName(accountId: String): String {
+            val cleaned = accountId.trim()
+            if (cleaned.isEmpty() || cleaned.contains('/') || cleaned.contains('\\') || cleaned.contains("..")) {
+                return SIGNED_OUT
+            }
+            return cleaned
+        }
+
+        private const val SIGNED_OUT = "_signed_out"
     }
 }
 
