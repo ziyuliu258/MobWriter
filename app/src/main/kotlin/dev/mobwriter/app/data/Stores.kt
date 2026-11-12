@@ -32,7 +32,10 @@ internal class AccountStore internal constructor(
     fun load(): AccountSession {
         val raw = prefs.getString(ACCOUNTS, null)
         if (raw != null) {
-            return runCatching { json.decodeFromString<AccountSession>(raw) }.getOrDefault(AccountSession())
+            val session = runCatching { json.decodeFromString<AccountSession>(raw) }.getOrNull()
+                ?: return AccountSession()
+            dropLegacyKeys()
+            return session
         }
         val legacy = readLegacy()
         if (legacy.owner.isBlank() && legacy.repo.isBlank() && legacy.token.isBlank()) {
@@ -45,8 +48,20 @@ internal class AccountStore internal constructor(
     }
 
     fun save(session: AccountSession) {
-        prefs.edit().putString(ACCOUNTS, json.encodeToString(session)).commit()
+        val editor = prefs.edit().putString(ACCOUNTS, json.encodeToString(session))
+        legacyKeys().forEach { editor.remove(it) }
+        editor.commit()
     }
+
+    private fun dropLegacyKeys() {
+        val stale = legacyKeys()
+        if (stale.isEmpty()) return
+        val editor = prefs.edit()
+        stale.forEach { editor.remove(it) }
+        editor.commit()
+    }
+
+    private fun legacyKeys(): Set<String> = prefs.all.keys.filter { it != ACCOUNTS }.toSet()
 
     private fun readLegacy(): BlogSettings = BlogSettings(
         owner = prefs.getString("owner", "") ?: "",
