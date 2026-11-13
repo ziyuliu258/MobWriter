@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.CircularProgressIndicator
@@ -132,15 +133,18 @@ internal fun UpdateSettingRow() {
     }
 
     Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Row(
-                Modifier.weight(1f).clickable(enabled = !busy, onClick = ::check).padding(vertical = 14.dp),
+                Modifier.weight(1f).clickable(enabled = !busy, onClick = ::check),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(Icons.Outlined.SystemUpdate, contentDescription = null, tint = Muted, modifier = Modifier.size(22.dp))
                 Column(Modifier.padding(start = 14.dp).weight(1f)) {
                     Text("检查更新", style = MaterialTheme.typography.titleLarge)
-                    Text(status, color = Muted)
+                    if (status.isNotBlank()) Text(status, color = Muted)
                 }
             }
             if (busy) {
@@ -151,6 +155,12 @@ internal fun UpdateSettingRow() {
                     Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = "打开发布页")
                 }
             }
+            Icon(
+                Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = Muted,
+                modifier = Modifier.clickable(enabled = !busy, onClick = ::check),
+            )
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
     }

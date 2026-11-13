@@ -31,6 +31,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.Logout
+import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
@@ -423,14 +424,26 @@ private fun AvatarBadge(avatar: ImageBitmap?, loading: Boolean) {
 }
 
 @Composable
-private fun MeEntry(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun MeEntry(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    subtitle: String = "",
+) {
     Column(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Row(
             Modifier.fillMaxWidth().padding(vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(icon, contentDescription = null, tint = Muted, modifier = Modifier.size(22.dp))
-            Text(label, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 14.dp).weight(1f))
+            if (subtitle.isBlank()) {
+                Text(label, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 14.dp).weight(1f))
+            } else {
+                Column(Modifier.padding(start = 14.dp).weight(1f)) {
+                    Text(label, style = MaterialTheme.typography.titleLarge)
+                    Text(subtitle, color = Muted)
+                }
+            }
             Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = Muted)
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
@@ -666,6 +679,63 @@ internal fun SetupScreen(
     title: String = "设置",
     showUpdate: Boolean = true,
 ) {
+    var editingAccount by remember { mutableStateOf(false) }
+    BackHandler(enabled = showUpdate && editingAccount) { editingAccount = false }
+    if (showUpdate && !editingAccount) {
+        SettingsListScreen(
+            accountLabel = initial.connectionLabel(),
+            onOpenAccount = { editingAccount = true },
+            onClose = onClose,
+        )
+    } else {
+        AccountSettingsForm(
+            initial = initial,
+            onSave = onSave,
+            onClose = if (showUpdate) ({ editingAccount = false }) else onClose,
+            title = if (showUpdate) "账户信息" else title,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsListScreen(
+    accountLabel: String,
+    onOpenAccount: () -> Unit,
+    onClose: (() -> Unit)?,
+) {
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                modifier = Modifier.statusBarsPadding(),
+                title = { Text("设置") },
+                navigationIcon = {
+                    if (onClose != null) {
+                        AppIconButton("返回", onClick = onClose) {
+                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+            )
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
+            MeEntry(Icons.Outlined.AccountCircle, "账户信息", onOpenAccount, subtitle = accountLabel)
+            UpdateSettingRow()
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AccountSettingsForm(
+    initial: BlogSettings,
+    onSave: (BlogSettings) -> Unit,
+    onClose: (() -> Unit)?,
+    title: String,
+) {
     val context = LocalContext.current
     var owner by remember { mutableStateOf(initial.owner) }
     var repo by remember { mutableStateOf(initial.repo) }
@@ -726,7 +796,6 @@ internal fun SetupScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (showUpdate) UpdateSettingRow()
             Text(if (savedToken.isNotBlank()) "令牌只保存在这台手机上。已保存，留空则保持不变。" else "令牌只保存在这台手机上。")
             OutlinedTextField(
                 value = token,
