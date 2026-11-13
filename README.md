@@ -51,12 +51,12 @@ cd MobWriter
 
 ## 在手机上安装新版本
 
-[`.github/workflows/release-apk.yml`](.github/workflows/release-apk.yml) 会构建安装包并发布到 GitHub Release。合并到 `master` 之后，工作流先跑仓库测试；测试通过才按已有正式标签把修订号加一，推送下一个标签，并只发布一次。已有 `v0.1.1` 时，下一个是 `v0.1.2`。另外两种方式仍然可用：
+[`.github/workflows/release-apk.yml`](.github/workflows/release-apk.yml) 会构建安装包并发布到 GitHub Release。合并到 `master` 之后，工作流先跑仓库测试。测试通过后，如果已经有正式标签还没有 Release，就给最早的那个标签补上 Release：安装包从该标签已经指向的提交构建，标签不会被移动，也不会改去分配下一个版本号。只有每个正式标签都已经有 Release 时，才把修订号加一。因此 `v0.1.2` 已经指向旧提交但还没有 Release 时，下一次自动发布仍然是 `v0.1.2`，而不是 `v0.1.3`。另外两种方式仍然可用：
 
-- 推送正式版本标签，例如 `v1.2.0`。标签使用 `v主版本.次版本.修订号`，新的发布会标成最新版本。
-- 在 GitHub 的 Actions 页面手动运行 Release Android package。它同样先跑测试，通过后发布下一个正式版本，不会另打非正式包。
+- 推送正式版本标签，例如 `v1.2.0`。标签使用 `v主版本.次版本.修订号`。人工推送的正式标签只发布该标签，不会再分配下一个号。
+- 在 GitHub 的 Actions 页面手动运行 Release Android package。留空标签时，规则与合并到 `master` 相同。如果填写一个已经存在的正式标签，工作流只发布那个标签，并且从它已经指向的提交构建；标签不存在时不会新建。
 
-发布内容是 `MobWriter.apk` 和 `update.json`。应用用 `update.json` 里的 `versionCode` 判断是否比已安装的版本新。工作流把 `versionCode` 设为该工作流的运行编号，所以新的一次发布可以盖过上一包。更新地址在构建时写入安装包，源码不写死账号或仓库名。
+发布内容是 `MobWriter.apk` 和 `update.json`。应用用 `update.json` 里的 `versionCode` 判断是否比已安装的版本新。工作流把 `versionCode` 设为该工作流的运行编号，并且必须大于已经发布过的 `versionCode`。更新地址在构建时写入安装包，源码不写死账号或仓库名。
 
 发布包只用一把固定签名，这样后一包才能覆盖安装前一包。不要把密钥文件提交到仓库，把下面四个 Secrets 配齐；缺任何一个时工作流会失败，不会临时生成调试钥匙：
 

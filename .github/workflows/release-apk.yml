@@ -2,15 +2,25 @@
 # 手机上的「检查更新」读取这个 Release 里的 MobWriter.apk 和 update.json。
 #
 # 合并到 master，或手动运行这个工作流时，都先跑仓库测试。
-# 测试通过才计算下一个正式版本标签并推送，然后只发布一次。
-# 版本按已有的 v主.次.修订 标签加一：已有 v0.1.1 时，下一个是 v0.1.2。
+# 测试通过后，如果已有正式标签还没有 GitHub Release，就发布其中最早的一个：
+# 安装包从该标签已经指向的提交构建，不移动标签，也不分配更新的版本号。
+# 每个正式标签都已有 Release 时，才按 v主.次.修订 把修订号加一并推送新标签，然后只发布一次。
+# 因此 v0.1.2 已经指向某个提交但还没有 Release 时，下一次发布仍是 v0.1.2，而不是 v0.1.3。
+# 手动运行时可以填写一个已经存在的正式标签，只发布那个标签；标签不存在则不会新建。
 # 新的发布标成最新版本。不使用 build 标签，也不使用 1.0.运行编号 这种版本名。
+# versionCode 使用本次运行编号，并且必须大于已经发布的 versionCode。
+#
+# gh release view 在 Release 不存在时可能写成 HTTP 404、not found，
+# 或 could not find release（这句本身不含 not found）。这些都表示还没有 Release。
+# 工作流会把 gh 的 stderr 打进日志，然后继续创建正式的 Latest 发布。其它错误会中止。
+# 每条 gh 命令都带上仓库名。解析步骤若在空目录里调用 gh，会得到
+# “not a git repository”，这不是 Release 缺失，不能当成可以发布。
 #
 # 用本仓库的 GITHUB_TOKEN 推送标签不会再触发工作流，所以自动标签本身不会打出第二个包。
 # 测试通过后，同一次运行里的发布任务构建并上传这一个包。
 # 若这个标签推送仍然冒出一次运行，发布任务会跳过 github-actions[bot]，
 # 并且同一个版本标签不会并行构建。人工推送的正式标签仍发布该标签，不会再分配下一个号。
-# 已有标签不会被覆盖或移动，包括 v0.1.0。
+# 已有标签不会被覆盖或移动，包括 v0.1.0、v0.1.1 和 v0.1.2。
 #
 # 发布包必须用同一把钥匙签名，新版本才能覆盖安装旧版本。
 # 不要把密钥库或口令写进仓库，放到 Actions Secrets，四个都要有：
@@ -28,9 +38,17 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "已有正式标签。填写后只发布这个标签，不新建也不移动。留空则优先补齐还没有 Release 的最早正式标签。"
+        required: false
+        type: string
 
 permissions:
   contents: write
+
+env:
+  GH_REPO: ${{ github.repository }}
 
 concurrency:
   group: android-release-${{ github.ref }}
@@ -45,6 +63,8 @@ jobs:
     timeout-minutes: 40
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      commit: ${{ steps.tag.outputs.commit }}
+      existing: ${{ steps.tag.outputs.existing }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,7 +72,9 @@ jobs:
           persist-credentials: true
 
       - name: Check version selection
-        run: python3 scripts/next-official-tag.py --self-test
+        run: |
+          python3 scripts/next-official-tag.py --self-test
+          python3 scripts/official_release.py --self-test
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -71,98 +93,14 @@ jobs:
       - name: Run repository tests
         run: ./gradlew :core:test :app:test :app:lintDebug --no-daemon
 
-      - name: Push the next official tag
+      - name: Select the official tag
         id: tag
         env:
           TARGET_SHA: ${{ github.sha }}
           GIT_TERMINAL_PROMPT: "0"
-        run: |
-          python3 - <<'PY'
-          import os
-          import re
-          import subprocess
-          import sys
-
-          official = re.compile(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\Z")
-          sha = os.environ["TARGET_SHA"]
-          blocked = ("-pre", "-rc", "-alpha", "-beta")
-
-          def next_tag() -> str:
-              raw = subprocess.check_output(
-                  ["git", "ls-remote", "--tags", "origin", "refs/tags/v*"],
-                  text=True,
-              )
-              tag = subprocess.check_output(
-                  ["python3", "scripts/next-official-tag.py"],
-                  input=raw,
-                  text=True,
-              ).strip()
-              if official.fullmatch(tag) is None or any(piece in tag.lower() for piece in blocked):
-                  sys.exit("refusing unofficial tag")
-              return tag
-
-          def remote_commit(tag: str) -> str:
-              raw = subprocess.check_output(
-                  [
-                      "git",
-                      "ls-remote",
-                      "--tags",
-                      "origin",
-                      f"refs/tags/{tag}",
-                      f"refs/tags/{tag}^{{}}",
-                  ],
-                  text=True,
-              )
-              commit = ""
-              for line in raw.splitlines():
-                  if not line.strip():
-                      continue
-                  found, ref = line.split()
-                  if ref.endswith("^{}"):
-                      return found
-                  commit = found
-              return commit
-
-          chosen = ""
-          for _ in range(8):
-              tag = next_tag()
-              current = remote_commit(tag)
-              if current == sha:
-                  chosen = tag
-                  break
-              if current:
-                  # This tag belongs to another commit. Never move it.
-                  continue
-              # Drop a tag that exists only in this checkout. Never delete a remote tag.
-              subprocess.run(
-                  ["git", "tag", "-d", tag],
-                  stdout=subprocess.DEVNULL,
-                  stderr=subprocess.DEVNULL,
-              )
-              subprocess.check_call(["git", "tag", tag, sha])
-              pushed = subprocess.run(
-                  ["git", "push", "origin", f"refs/tags/{tag}:refs/tags/{tag}"]
-              )
-              landed = remote_commit(tag)
-              if landed == sha:
-                  chosen = tag
-                  break
-              subprocess.run(
-                  ["git", "tag", "-d", tag],
-                  stdout=subprocess.DEVNULL,
-                  stderr=subprocess.DEVNULL,
-              )
-              if pushed.returncode != 0 and not landed:
-                  sys.exit("failed to push the new tag; existing tags were left untouched")
-          if not chosen:
-              sys.exit("could not allocate an official tag")
-          if remote_commit(chosen) != sha:
-              sys.exit("refusing to publish because the tag does not point at this commit")
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              handle.write(f"tag={chosen}\n")
-          print(f"Official tag {chosen} points at this commit.")
-          PY
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ github.event.inputs.tag }}
+        run: python3 scripts/select_official_tag.py
 
   publish:
     needs: test-and-tag
@@ -186,142 +124,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
       - name: Resolve release
         id: gate
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_NUMBER: ${{ github.run_number }}
           PLANNED_TAG: ${{ needs.test-and-tag.outputs.tag }}
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import pathlib
-          import re
-          import subprocess
-          import sys
-          import tempfile
+          PLANNED_COMMIT: ${{ needs.test-and-tag.outputs.commit }}
+          PLANNED_EXISTING: ${{ needs.test-and-tag.outputs.existing }}
+        run: python3 scripts/resolve_release.py
 
-          ref = os.environ["GITHUB_REF"]
-          ref_name = os.environ["GITHUB_REF_NAME"]
-          run_number = os.environ["RUN_NUMBER"]
-          planned = os.environ.get("PLANNED_TAG", "").strip()
-          blocked = ("-pre", "-rc", "-alpha", "-beta")
-          official = re.compile(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\Z")
-          event = os.environ["GITHUB_EVENT_NAME"]
-          cuts_next_release = event == "workflow_dispatch" or (event == "push" and ref == "refs/heads/master")
-
-          if cuts_next_release:
-              if official.fullmatch(planned) is None:
-                  sys.exit("official publish is missing its version tag")
-              tag = planned
-              name = planned[1:]
-          elif event == "push" and ref.startswith("refs/tags/"):
-              tag = ref_name
-              name = ref_name[1:] if ref_name.startswith("v") else ref_name
-          else:
-              sys.exit("refusing to publish without an official version tag")
-          if tag.lower() == "latest" or tag.lower().startswith("build-") or any(piece in tag.lower() for piece in blocked):
-              sys.exit("refusing this tag; existing tags and releases were left unchanged")
-          if official.fullmatch(tag) is None or name != tag[1:]:
-              sys.exit("refusing an unofficial version; existing tags were left unchanged")
-          if not run_number.isdigit() or int(run_number) <= 0:
-              sys.exit("refusing an unusable version code")
-
-          def output(**values: str) -> None:
-              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-                  for key, value in values.items():
-                      handle.write(f"{key}={value}\n")
-
-          view = subprocess.run(
-              ["gh", "release", "view", tag, "--json", "assets,isPrerelease,tagName"],
-              stdout=subprocess.PIPE,
-              stderr=subprocess.PIPE,
-              text=True,
-          )
-          release = None
-          if view.returncode == 0:
-              release = json.loads(view.stdout)
-          else:
-              detail = (view.stderr or "").lower()
-              if "not found" not in detail:
-                  sys.exit("could not read the existing release")
-
-          if release is not None and release.get("isPrerelease"):
-              sys.exit("refusing to replace an existing non-final release")
-
-          names = []
-          if release is not None:
-              names = [asset.get("name", "") for asset in release.get("assets", [])]
-          has_apk = "MobWriter.apk" in names
-          has_json = "update.json" in names
-          if has_apk and has_json:
-              output(skip="true", tag=tag, code="0", name=name, create="false", upload_apk="false", upload_json="false")
-              print(f"Release {tag} already has both packages; not publishing again.")
-              sys.exit(0)
-          if has_apk and not has_json:
-              sys.exit("release has an apk and no manifest; leaving both unchanged")
-
-          def released_codes(except_tag: str) -> int:
-              listed = json.loads(subprocess.check_output(
-                  ["gh", "release", "list", "--limit", "100", "--json", "tagName"],
-                  text=True,
-              ))
-              highest = 0
-              for item in listed:
-                  other = item["tagName"]
-                  if other == except_tag:
-                      continue
-                  with tempfile.TemporaryDirectory() as tmp:
-                      downloaded = subprocess.run(
-                          ["gh", "release", "download", other, "--pattern", "update.json", "--dir", tmp],
-                          stdout=subprocess.DEVNULL,
-                          stderr=subprocess.DEVNULL,
-                      )
-                      path = pathlib.Path(tmp, "update.json")
-                      if downloaded.returncode != 0 or not path.is_file():
-                          continue
-                      code = int(json.loads(path.read_text(encoding="utf-8"))["versionCode"])
-                      highest = max(highest, code)
-              return highest
-
-          if has_json:
-              with tempfile.TemporaryDirectory() as tmp:
-                  subprocess.check_call(
-                      ["gh", "release", "download", tag, "--pattern", "update.json", "--dir", tmp]
-                  )
-                  manifest = json.loads(pathlib.Path(tmp, "update.json").read_text(encoding="utf-8"))
-              code = int(manifest["versionCode"])
-              name = str(manifest["versionName"])
-              if code <= 0 or name != tag[1:]:
-                  sys.exit("refusing the manifest already attached to this release")
-              create = False
-              upload_apk = True
-              upload_json = False
-          else:
-              code = int(run_number)
-              create = release is None
-              upload_apk = not has_apk
-              upload_json = not has_json
-          previous = released_codes(tag)
-          if code <= previous:
-              sys.exit(f"versionCode {code} is not greater than the previous release versionCode {previous}")
-          output(
-              skip="false",
-              tag=tag,
-              code=str(code),
-              name=name,
-              create="true" if create else "false",
-              upload_apk="true" if upload_apk else "false",
-              upload_json="true" if upload_json else "false",
-          )
-          print(f"Publishing {tag} with versionCode {code}, which is greater than {previous}.")
-          PY
-
-      - name: Checkout
-        if: steps.gate.outputs.skip != 'true'
+      - name: Checkout the tagged commit
+        if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.commit != github.sha
         uses: actions/checkout@v4
         with:
+          ref: ${{ steps.gate.outputs.commit }}
           persist-credentials: false
 
       - name: Setup Java
@@ -369,7 +191,12 @@ jobs:
           MOBWRITER_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           VERSION_CODE: ${{ steps.gate.outputs.code }}
           VERSION_NAME: ${{ steps.gate.outputs.name }}
+          EXPECTED_COMMIT: ${{ steps.gate.outputs.commit }}
         run: |
+          if [ "$(git rev-parse HEAD)" != "${EXPECTED_COMMIT}" ]; then
+            echo "refusing to build a commit the official tag does not point at"
+            exit 1
+          fi
           ./gradlew :app:assembleRelease --no-daemon \
             -Pmobwriter.updateOwner="${GITHUB_REPOSITORY_OWNER}" \
             -Pmobwriter.updateRepo="${GITHUB_REPOSITORY#*/}" \
@@ -405,6 +232,8 @@ jobs:
           CREATE: ${{ steps.gate.outputs.create }}
           UPLOAD_APK: ${{ steps.gate.outputs.upload_apk }}
           UPLOAD_JSON: ${{ steps.gate.outputs.upload_json }}
+          COMMIT: ${{ steps.gate.outputs.commit }}
+          EXISTING: ${{ steps.gate.outputs.existing }}
         run: |
           python3 - <<'PY'
           import os
@@ -415,10 +244,16 @@ jobs:
           tag = os.environ["TAG"]
           name = os.environ["VERSION_NAME"]
           code = os.environ["VERSION_CODE"]
+          expected = os.environ["COMMIT"]
+          existing = os.environ["EXISTING"] == "true"
+          repo = os.environ["GITHUB_REPOSITORY"]
           if re.fullmatch(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", tag) is None or name != tag[1:]:
               sys.exit("refusing an unofficial version")
           if tag.lower() == "latest" or tag.lower().startswith("build-") or any(piece in tag.lower() for piece in ("-pre", "-rc", "-alpha", "-beta")):
               sys.exit("refusing this tag")
+          head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          if head != expected:
+              sys.exit("refusing to build a commit the official tag does not point at")
           title = f"墨哺 {name}"
           notes = (
               f"墨哺 {name}（{code}）\n"
@@ -440,26 +275,52 @@ jobs:
           with open(notes_path, "w", encoding="utf-8") as handle:
               handle.write(notes)
 
+          def remote_commit(tag_name: str) -> str:
+              raw = subprocess.check_output(
+                  [
+                      "git",
+                      "ls-remote",
+                      "--tags",
+                      "origin",
+                      f"refs/tags/{tag_name}",
+                      f"refs/tags/{tag_name}^{{}}",
+                  ],
+                  text=True,
+              )
+              commit = ""
+              for line in raw.splitlines():
+                  if not line.strip():
+                      continue
+                  found, ref = line.split()
+                  if ref.endswith("^{}"):
+                      return found
+                  commit = found
+              return commit
+
           if os.environ["CREATE"] == "true":
               command = [
                   "gh", "release", "create", tag,
                   "MobWriter.apk", "update.json",
+                  "--repo", repo,
                   "--title", title,
                   "--notes-file", notes_path,
                   "--latest",
               ]
-              exists = subprocess.run(
-                  ["gh", "api", f"repos/{os.environ['GITHUB_REPOSITORY']}/git/ref/tags/{tag}"],
-                  stdout=subprocess.DEVNULL,
-                  stderr=subprocess.DEVNULL,
-              )
-              if exists.returncode != 0:
-                  command.extend(["--target", os.environ["GITHUB_SHA"]])
+              remote = remote_commit(tag)
+              if existing:
+                  if remote != expected:
+                      sys.exit("refusing to move or recreate an existing tag")
+              elif remote and remote != expected:
+                  sys.exit("refusing to move an existing tag")
+              elif not remote:
+                  if expected != os.environ["GITHUB_SHA"]:
+                      sys.exit("refusing to create a tag from a different commit")
+                  command.extend(["--target", expected])
               subprocess.check_call(command)
           else:
               if os.environ["UPLOAD_APK"] == "true":
-                  subprocess.check_call(["gh", "release", "upload", tag, "MobWriter.apk"])
+                  subprocess.check_call(["gh", "release", "upload", tag, "MobWriter.apk", "--repo", repo])
               if os.environ["UPLOAD_JSON"] == "true":
-                  subprocess.check_call(["gh", "release", "upload", tag, "update.json"])
+                  subprocess.check_call(["gh", "release", "upload", tag, "update.json", "--repo", repo])
           print(f"Published {tag} once.")
           PY
