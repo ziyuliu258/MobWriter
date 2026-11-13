@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import dev.mobwriter.app.core.blog.BlogService
 import dev.mobwriter.app.core.github.GitHubClient
@@ -71,7 +72,7 @@ class MainShellTest {
     }
 
     @Test
-    fun settingsContainsTheUpdateEntry() {
+    fun settingsListsAccountAndUpdateAsPeerRows() {
         rule.setContent {
             MobWriterTheme {
                 SetupScreen(
@@ -82,8 +83,62 @@ class MainShellTest {
             }
         }
         rule.onNodeWithText("设置").assertIsDisplayed()
+        rule.onNodeWithText("账户信息").assertIsDisplayed()
         rule.onNodeWithText("检查更新").assertIsDisplayed()
+        rule.onNodeWithText("example-owner/example-app").assertIsDisplayed()
+        rule.onNodeWithText("GitHub 令牌").assertDoesNotExist()
+        rule.onNodeWithText("仓库所有者").assertDoesNotExist()
+        rule.onNodeWithText("仓库名").assertDoesNotExist()
+        rule.onNodeWithText("分支").assertDoesNotExist()
+        rule.onNodeWithText("文章目录").assertDoesNotExist()
+        rule.onNodeWithText("图片放在哪").assertDoesNotExist()
+        rule.onNodeWithText("发布后触发自动构建").assertDoesNotExist()
+        rule.onNodeWithText("工作流文件名").assertDoesNotExist()
+        rule.onNodeWithText("账户信息").performClick()
+        rule.onNodeWithText("检查更新").assertDoesNotExist()
         rule.onNodeWithText("GitHub 令牌").assertIsDisplayed()
+        rule.onNodeWithText("仓库所有者").assertIsDisplayed()
+        rule.onNodeWithText("仓库名").assertIsDisplayed()
+        rule.onNodeWithText("分支").assertIsDisplayed()
+        rule.onNodeWithText("文章目录").assertIsDisplayed()
+        rule.onNodeWithText("图片放在哪").assertIsDisplayed()
+        rule.onNodeWithText("跟文章放在一起").assertIsDisplayed()
+        rule.onNodeWithText("放进 source/images").assertIsDisplayed()
+        rule.onNodeWithText("example-owner").assertIsDisplayed()
+        rule.onNodeWithText("example-app").assertIsDisplayed()
+        rule.onNodeWithText("发布后触发自动构建").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("工作流文件名").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithContentDescription("返回").performClick()
+        rule.onNodeWithText("设置").assertIsDisplayed()
+        rule.onNodeWithText("账户信息").assertIsDisplayed()
+        rule.onNodeWithText("检查更新").assertIsDisplayed()
+        rule.onNodeWithText("GitHub 令牌").assertDoesNotExist()
+    }
+
+    @Test
+    fun addAccountOpensTheFormWithoutTheUpdateRow() {
+        rule.setContent {
+            MobWriterTheme {
+                SetupScreen(
+                    initial = BlogSettings(),
+                    onSave = {},
+                    onClose = {},
+                    title = "添加账号",
+                    showUpdate = false,
+                )
+            }
+        }
+        rule.onNodeWithText("添加账号").assertIsDisplayed()
+        rule.onNodeWithText("GitHub 令牌").assertIsDisplayed()
+        rule.onNodeWithText("仓库所有者").assertIsDisplayed()
+        rule.onNodeWithText("仓库名").assertIsDisplayed()
+        rule.onNodeWithText("分支").assertIsDisplayed()
+        rule.onNodeWithText("文章目录").assertIsDisplayed()
+        rule.onNodeWithText("图片放在哪").assertIsDisplayed()
+        rule.onNodeWithText("发布后触发自动构建").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("工作流文件名").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("检查更新").assertDoesNotExist()
+        rule.onNodeWithText("账户信息").assertDoesNotExist()
     }
 
     @Test
