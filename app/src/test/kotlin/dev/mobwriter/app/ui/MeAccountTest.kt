@@ -134,10 +134,16 @@ class MeAccountTest {
         rule.onNodeWithText("甲作者").assertDoesNotExist()
         rule.onNodeWithText("beta/notes").assertIsDisplayed()
         rule.onNodeWithText("设置").performClick()
+        rule.onNodeWithText("账户信息").assertIsDisplayed()
+        rule.onNodeWithText("beta/notes").assertIsDisplayed()
+        rule.onNodeWithText("检查更新").assertIsDisplayed()
+        rule.onNodeWithText("token-beta-kept").assertDoesNotExist()
+        rule.onNodeWithText("GitHub 令牌").assertDoesNotExist()
+        rule.onNodeWithText("账户信息").performClick()
         rule.onNodeWithText("beta").assertIsDisplayed()
         rule.onNodeWithText("notes").assertIsDisplayed()
         rule.onNodeWithText("token-beta-kept").assertDoesNotExist()
-        rule.onNodeWithText("检查更新").assertIsDisplayed()
+        rule.onNodeWithText("检查更新").assertDoesNotExist()
     }
 
     @Test
@@ -183,6 +189,8 @@ class MeAccountTest {
                 )
             }
         }
+        rule.onNodeWithText("账户信息").performClick()
+        rule.onNodeWithText("检查更新").assertDoesNotExist()
         rule.onNodeWithText("token-alpha-kept").assertDoesNotExist()
         rule.onNodeWithText("显示令牌").assertDoesNotExist()
         rule.onNodeWithText("已保存，留空则保持不变", substring = true).assertIsDisplayed()
