@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import dev.mobwriter.app.core.github.OkHttpTransport
@@ -23,18 +22,11 @@ class AppUpdater(
     private val lookup: ReleaseLookup = ReleaseLookup(OkHttpTransport()),
 ) {
     fun installedVersion(): InstalledVersion {
-        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.packageManager.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
-        } else {
-            @Suppress("DEPRECATION")
-            context.packageManager.getPackageInfo(context.packageName, 0)
-        }
-        val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            info.longVersionCode
-        } else {
-            @Suppress("DEPRECATION")
-            info.versionCode.toLong()
-        }.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+        val info = context.packageManager.getPackageInfo(
+            context.packageName,
+            PackageManager.PackageInfoFlags.of(0),
+        )
+        val code = info.longVersionCode.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
         return InstalledVersion(code, info.versionName.orEmpty())
     }
 
@@ -52,12 +44,15 @@ class AppUpdater(
 
     fun canInstallPackages(): Boolean = context.packageManager.canRequestPackageInstalls()
 
-    fun downloadAndInstall(url: String): Boolean {
-        val bytes = lookup.download(url)
-        if (!AppUpdate.looksLikeApk(bytes)) return false
+    fun downloadTo(choice: UpdateChoice.Install, onProgress: (Float) -> Unit): File {
         val directory = File(context.cacheDir, "updates").apply { mkdirs() }
-        val file = File(directory, "MobWriter-update.apk")
-        file.writeBytes(bytes)
+        val safe = choice.versionName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "update" }
+        val file = File(directory, "MobWriter-$safe.apk")
+        lookup.downloadTo(choice.downloadUrl, file, onProgress)
+        return file
+    }
+
+    fun install(file: File): Boolean {
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")

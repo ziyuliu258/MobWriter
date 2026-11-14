@@ -1,5 +1,6 @@
 package dev.mobwriter.app.ui
 
+import android.app.Activity
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
@@ -8,7 +9,10 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
@@ -140,9 +144,22 @@ fun MobWriterTheme(
     content: @Composable () -> Unit,
 ) {
     val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val scheme = colorsFor(appearance.palette, dark)
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as Activity).window
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+            val controller = WindowCompat.getInsetsController(window, view)
+            val lightBars = scheme.background.luminance() > 0.5f
+            controller.isAppearanceLightStatusBars = lightBars
+            controller.isAppearanceLightNavigationBars = lightBars
+        }
+    }
     CompositionLocalProvider(LocalAppearance provides appearance) {
         MaterialTheme(
-            colorScheme = colorsFor(appearance.palette, dark),
+            colorScheme = scheme,
             typography = typographyFor(appearance.ui),
             content = content,
         )

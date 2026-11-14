@@ -170,7 +170,15 @@ object ImageIntake {
         val directory = File(context.filesDir, "images").apply { mkdirs() }
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
         val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
-        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        val bitmap = if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            null
+        } else {
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply {
+                inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, 1920)
+            })
+        }
         if (bitmap == null) {
             val file = File(directory, "img-$stamp.bin")
             file.writeBytes(bytes)
@@ -189,8 +197,8 @@ object ImageIntake {
         } else {
             rotated
         }
-        val file = File(directory, "img-$stamp.jpg")
-        FileOutputStream(file).use { scaled.compress(Bitmap.CompressFormat.JPEG, 86, it) }
+        val file = File(directory, "img-$stamp.webp")
+        FileOutputStream(file).use { scaled.compress(Bitmap.CompressFormat.WEBP_LOSSY, 80, it) }
         if (scaled !== rotated) scaled.recycle()
         if (rotated !== bitmap) rotated.recycle()
         bitmap.recycle()
@@ -212,5 +220,11 @@ object ImageIntake {
         }
         val matrix = Matrix().apply { postRotate(degrees) }
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+
+    private fun sampleSize(width: Int, height: Int, maxEdge: Int): Int {
+        var sample = 1
+        while (width / sample > maxEdge || height / sample > maxEdge) sample *= 2
+        return sample
     }
 }

@@ -49,7 +49,8 @@ android {
 
     defaultConfig {
         applicationId = "dev.mobwriter.app"
-        minSdk = 26
+        minSdk = 35
+        resourceConfigurations += "zh"
         targetSdk = 35
         versionCode = publishedVersionCode ?: 1
         versionName = publishedVersionName ?: "1.0.0"
@@ -64,13 +65,19 @@ android {
                 storePassword = releaseStorePassword
                 keyAlias = releaseKeyAlias
                 keyPassword = releaseKeyPassword
+                enableV3Signing = true
             }
         }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             if (hasReleaseKey) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -95,6 +102,17 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        // 安装包从 GitHub Release 整包下载。API 35 起 AGP 默认不压缩 dex，方便 ART mmap，
+        // 但整包下载会大一截。dex 压进 APK，安装时再解开。
+        // 原生库保持不压缩、按 16 KB 页对齐，Android 15 才能直接加载。
+        dex { useLegacyPackaging = true }
+        jniLibs { useLegacyPackaging = false }
+    }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.packaging.jniLibs.excludes.addAll("lib/x86/**", "lib/x86_64/**")
     }
 }
 
@@ -111,6 +129,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.security:security-crypto:1.0.0")
