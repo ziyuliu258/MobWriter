@@ -84,7 +84,13 @@ class MainShellTest {
         }
         rule.onNodeWithText("设置").assertIsDisplayed()
         rule.onNodeWithText("账户信息").assertIsDisplayed()
+        rule.onNodeWithText("外观").assertIsDisplayed()
+        rule.onNodeWithText("界面 标准 · 文章 标准").assertIsDisplayed()
         rule.onNodeWithText("检查更新").assertIsDisplayed()
+        val accountTop = rule.onNodeWithText("账户信息").fetchSemanticsNode().boundsInRoot.top
+        val appearanceTop = rule.onNodeWithText("外观").fetchSemanticsNode().boundsInRoot.top
+        val updateTop = rule.onNodeWithText("检查更新").fetchSemanticsNode().boundsInRoot.top
+        assertTrue(accountTop < appearanceTop && appearanceTop < updateTop)
         rule.onNodeWithText("example-owner/example-app").assertIsDisplayed()
         rule.onNodeWithText("GitHub 令牌").assertDoesNotExist()
         rule.onNodeWithText("仓库所有者").assertDoesNotExist()
@@ -96,6 +102,7 @@ class MainShellTest {
         rule.onNodeWithText("工作流文件名").assertDoesNotExist()
         rule.onNodeWithText("账户信息").performClick()
         rule.onNodeWithText("检查更新").assertDoesNotExist()
+        rule.onNodeWithText("外观").assertDoesNotExist()
         rule.onNodeWithText("GitHub 令牌").assertIsDisplayed()
         rule.onNodeWithText("仓库所有者").assertIsDisplayed()
         rule.onNodeWithText("仓库名").assertIsDisplayed()
@@ -111,6 +118,7 @@ class MainShellTest {
         rule.onNodeWithContentDescription("返回").performClick()
         rule.onNodeWithText("设置").assertIsDisplayed()
         rule.onNodeWithText("账户信息").assertIsDisplayed()
+        rule.onNodeWithText("外观").assertIsDisplayed()
         rule.onNodeWithText("检查更新").assertIsDisplayed()
         rule.onNodeWithText("GitHub 令牌").assertDoesNotExist()
     }
@@ -139,6 +147,7 @@ class MainShellTest {
         rule.onNodeWithText("工作流文件名").performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("检查更新").assertDoesNotExist()
         rule.onNodeWithText("账户信息").assertDoesNotExist()
+        rule.onNodeWithText("外观").assertDoesNotExist()
     }
 
     @Test
