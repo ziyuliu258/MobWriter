@@ -109,7 +109,8 @@ internal fun UpdateSettingRow() {
                             DirectInstallStep.Download -> {
                                 status = "正在下载"
                                 val installedPackage = try {
-                                    withContext(Dispatchers.IO) { updater.downloadAndInstall(choice.downloadUrl) }
+                                    val file = withContext(Dispatchers.IO) { updater.downloadTo(choice) {} }
+                                    updater.install(file)
                                 } catch (error: CancellationException) {
                                     throw error
                                 } catch (error: Exception) {
@@ -131,13 +132,14 @@ internal fun UpdateSettingRow() {
         }
     }
 
+    val checkForUpdate = LocalUpdateCheck.current
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(
-                Modifier.weight(1f).clickable(enabled = !busy, onClick = ::check),
+                Modifier.weight(1f).clickable(enabled = !busy, onClick = { checkForUpdate?.invoke() ?: check() }),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(Icons.Outlined.SystemUpdate, contentDescription = null, tint = Muted, modifier = Modifier.size(22.dp))

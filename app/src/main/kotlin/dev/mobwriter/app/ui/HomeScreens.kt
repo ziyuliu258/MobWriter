@@ -6,6 +6,13 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -93,7 +100,10 @@ import dev.mobwriter.app.core.github.GitHubClient
 import dev.mobwriter.app.core.github.OkHttpTransport
 import dev.mobwriter.app.core.model.AccountSession
 import dev.mobwriter.app.core.model.Appearance
+import dev.mobwriter.app.core.blog.HexoPaths
 import dev.mobwriter.app.core.model.BlogSettings
+import dev.mobwriter.app.core.model.SiteDefaults
+import dev.mobwriter.app.core.model.SiteEngine
 import dev.mobwriter.app.core.model.ImageMode
 import dev.mobwriter.app.core.model.PostSummary
 import dev.mobwriter.app.core.model.connectionLabel
@@ -110,6 +120,11 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 
 internal enum class MainTab { Home, Me }
+
+private sealed interface Scene {
+    data class Tabs(val tab: MainTab) : Scene
+    data class Page(val overlay: Overlay) : Scene
+}
 
 private sealed interface Overlay {
     data class Settings(val creating: Boolean) : Overlay
@@ -135,16 +150,23 @@ fun MobWriterApp() {
             kotlinx.coroutines.delay(1100)
             showSplash = false
         }
-        Box(Modifier.fillMaxSize()) {
-            AppearanceBackground(appearance.background)
-            AppContent(
-                appearance = appearance,
-                onAppearance = { next ->
-                    appearanceStore.save(next)
-                    appearance = next
-                },
-            )
-            if (showSplash) SplashCover()
+        UpdateHost {
+            Box(Modifier.fillMaxSize()) {
+                AppearanceBackground(appearance.background)
+                AppContent(
+                    appearance = appearance,
+                    onAppearance = { next ->
+                        appearanceStore.save(next)
+                        appearance = next
+                    },
+                )
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showSplash,
+                    exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(420)),
+                ) {
+                    SplashCover()
+                }
+            }
         }
     }
 }
@@ -190,7 +212,21 @@ private fun AppContent(
     }
     val drafts = remember(accountId) { DraftStore(context, accountId) }
     val avatarCache = remember { AvatarCache(context) }
-    val blog = remember(settings.token, settings.owner, settings.repo, settings.branch, settings.postsPath, settings.imageMode, settings.autoBuild, settings.workflow) {
+    val blog = remember(
+        settings.token,
+        settings.owner,
+        settings.repo,
+        settings.branch,
+        settings.postsPath,
+        settings.engine,
+        settings.imageMode,
+        settings.imageDirectory,
+        settings.assetsDirectory,
+        settings.seriesIndexKey,
+        settings.seriesFile,
+        settings.autoBuild,
+        settings.workflow,
+    ) {
         BlogService(GitHubClient(OkHttpTransport(), settings.token), settings)
     }
     var author by remember { mutableStateOf("") }
@@ -243,8 +279,27 @@ private fun AppContent(
     }
     BackHandler(enabled = overlay.isNotEmpty(), onBack = ::pop)
     val bottomBar: @Composable () -> Unit = { MobBottomBar(tab) { tab = it } }
-    when (val screen = overlay.lastOrNull()) {
-        null -> when (tab) {
+    val scene = overlay.lastOrNull()?.let { Scene.Page(it) } ?: Scene.Tabs(tab)
+    AnimatedContent(
+        targetState = scene,
+        transitionSpec = {
+            val from = initialState
+            val to = targetState
+            val forward = when {
+                from is Scene.Tabs && to is Scene.Page -> true
+                from is Scene.Page && to is Scene.Tabs -> false
+                from is Scene.Tabs && to is Scene.Tabs -> to.tab.ordinal >= from.tab.ordinal
+                else -> true
+            }
+            val fade = tween<Float>(220)
+            val enter = fadeIn(fade) + slideInHorizontally { full -> if (forward) full / 5 else -full / 5 }
+            val exit = fadeOut(fade) + slideOutHorizontally { full -> if (forward) -full / 8 else full / 5 }
+            enter togetherWith exit
+        },
+        label = "page",
+    ) { current ->
+    when (val screen = (current as? Scene.Page)?.overlay) {
+        null -> when ((current as Scene.Tabs).tab) {
             MainTab.Home -> key(accountId) {
                 PostListScreen(
                     blog = blog,
@@ -343,6 +398,7 @@ private fun AppContent(
             )
         }
     }
+    }
 }
 
 @Composable
@@ -387,7 +443,7 @@ internal fun MeScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                modifier = Modifier.statusBarsPadding(),
+                modifier = Modifier,
                 title = { Text("我的") },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
             )
@@ -487,7 +543,7 @@ internal fun SwitchAccountScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                modifier = Modifier.statusBarsPadding(),
+                modifier = Modifier,
                 title = { Text("切换账号") },
                 navigationIcon = {
                     AppIconButton("返回", onClick = onClose) {
@@ -597,7 +653,7 @@ internal fun PostListScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                modifier = Modifier.statusBarsPadding(),
+                modifier = Modifier,
                 title = { Text("墨哺") },
                 actions = {
                     if (loading) {
@@ -740,7 +796,7 @@ private fun SettingsListScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                modifier = Modifier.statusBarsPadding(),
+                modifier = Modifier,
                 title = { Text("设置") },
                 navigationIcon = {
                     if (onClose != null) {
@@ -777,7 +833,12 @@ private fun AccountSettingsForm(
     var token by remember { mutableStateOf("") }
     var workflow by remember { mutableStateOf(initial.workflow) }
     var autoBuild by remember { mutableStateOf(initial.autoBuild) }
+    var engine by remember { mutableStateOf(initial.engine) }
     var imageMode by remember { mutableStateOf(initial.imageMode) }
+    var imageDirectory by remember { mutableStateOf(initial.imageDirectory) }
+    var assetsDirectory by remember { mutableStateOf(initial.assetsDirectory) }
+    var seriesIndexKey by remember { mutableStateOf(initial.seriesIndexKey) }
+    var seriesFile by remember { mutableStateOf(initial.seriesFile) }
     val savedToken = initial.token
     val tokenToStore = token.trim().ifBlank { savedToken }
     val canSave = tokenToStore.isNotBlank() && owner.isNotBlank() && repo.isNotBlank()
@@ -785,7 +846,7 @@ private fun AccountSettingsForm(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                modifier = Modifier.statusBarsPadding(),
+                modifier = Modifier,
                 title = { Text(title) },
                 navigationIcon = {
                     if (onClose != null) {
@@ -806,7 +867,12 @@ private fun AccountSettingsForm(
                                     repo = repo,
                                     branch = branch,
                                     postsPath = posts,
+                                    engine = engine,
                                     imageMode = imageMode,
+                                    imageDirectory = imageDirectory,
+                                    assetsDirectory = assetsDirectory,
+                                    seriesIndexKey = seriesIndexKey,
+                                    seriesFile = seriesFile,
                                     autoBuild = autoBuild,
                                     workflow = workflow,
                                     token = tokenToStore,
@@ -849,14 +915,74 @@ private fun AccountSettingsForm(
             OutlinedTextField(repo, { repo = it }, label = { Text("仓库名") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(branch, { branch = it }, label = { Text("分支") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(posts, { posts = it }, label = { Text("文章目录") }, modifier = Modifier.fillMaxWidth())
-            Text("图片放在哪", modifier = Modifier.padding(top = 8.dp))
+            Text("站点", modifier = Modifier.padding(top = 8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = imageMode == ImageMode.PostFolder, onClick = { imageMode = ImageMode.PostFolder })
-                Text("跟文章放在一起")
+                RadioButton(
+                    selected = engine == SiteEngine.Hexo,
+                    onClick = {
+                        engine = SiteEngine.Hexo
+                        if (imageMode == ImageMode.Assets) imageMode = ImageMode.PostFolder
+                    },
+                )
+                Text("Hexo")
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = imageMode == ImageMode.SourceImages, onClick = { imageMode = ImageMode.SourceImages })
-                Text("放进 source/images")
+                RadioButton(
+                    selected = engine == SiteEngine.Astro,
+                    onClick = {
+                        engine = SiteEngine.Astro
+                        imageMode = ImageMode.Assets
+                    },
+                )
+                Text("Astro")
+            }
+            if (engine == SiteEngine.Hexo) {
+                Text("图片放在哪", modifier = Modifier.padding(top = 8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = imageMode == ImageMode.PostFolder, onClick = { imageMode = ImageMode.PostFolder })
+                    Text("跟文章放在一起")
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = imageMode == ImageMode.SourceImages, onClick = { imageMode = ImageMode.SourceImages })
+                    Text("放进站点图片目录")
+                }
+                if (imageMode == ImageMode.SourceImages) {
+                    OutlinedTextField(
+                        imageDirectory,
+                        { imageDirectory = it },
+                        label = { Text("图片目录") },
+                        supportingText = {
+                            Text("须在 source/ 下，正文写成 /" + HexoPaths.normalizeImageDirectory(imageDirectory).removePrefix("source/") + "/文件名")
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                OutlinedTextField(
+                    seriesIndexKey,
+                    { seriesIndexKey = it },
+                    label = { Text("系列序号字段，可不填") },
+                    supportingText = { Text("主题用来排序的字段，如 series_index。留空则不自动编号") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                OutlinedTextField(
+                    assetsDirectory,
+                    { assetsDirectory = it },
+                    label = { Text("图片目录") },
+                    supportingText = { Text("正文写成从文章到 " + HexoPaths.normalizeAssetsDirectory(assetsDirectory) + " 的相对路径") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    seriesFile,
+                    { seriesFile = it },
+                    label = { Text("专栏名单") },
+                    supportingText = { Text("默认 " + SiteDefaults.SERIES_FILE + "。文章里的专栏名必须是其中的顶层键，序号留空则自动接在最后") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("发布后触发自动构建", modifier = Modifier.weight(1f))

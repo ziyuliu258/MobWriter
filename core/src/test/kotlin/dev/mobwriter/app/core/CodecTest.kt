@@ -1,13 +1,19 @@
 package dev.mobwriter.app.core
 
 import dev.mobwriter.app.core.blog.HexoPaths
+import dev.mobwriter.app.core.blog.SeriesCatalog
+import dev.mobwriter.app.core.blog.SeriesNumbers
 import dev.mobwriter.app.core.markdown.InlineEdit
 import dev.mobwriter.app.core.markdown.InlineKind
 import dev.mobwriter.app.core.markdown.InlineMarkup
 import dev.mobwriter.app.core.markdown.PostCodec
 import dev.mobwriter.app.core.model.Align
 import dev.mobwriter.app.core.model.Block
+import dev.mobwriter.app.core.model.BlogSettings
 import dev.mobwriter.app.core.model.ImageMode
+import dev.mobwriter.app.core.model.PostDocument
+import dev.mobwriter.app.core.model.PostSummary
+import dev.mobwriter.app.core.model.SiteEngine
 import java.io.File
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import kotlin.test.Test
@@ -83,6 +89,48 @@ class CodecTest {
         assertEquals("./标题/a.jpg", HexoPaths.imagePublicSrc("source/_posts/标题.md", "a.jpg", ImageMode.PostFolder))
         assertEquals("/images/a.jpg", HexoPaths.imagePublicSrc("source/_posts/标题.md", "a.jpg", ImageMode.SourceImages))
         assertNull(HexoPaths.repoPathForImage("source/_posts", "source/_posts/标题.md", "https://example.com/a.jpg"))
+        assertEquals(
+            "../../src/assets/imgs/a.webp",
+            HexoPaths.imagePublicSrc("source/_posts/标题.md", "a.webp", ImageMode.Assets),
+        )
+        assertEquals(
+            "src/assets/imgs/a.webp",
+            HexoPaths.repoPathForImage("source/_posts", "source/_posts/标题.md", "../../src/assets/imgs/a.webp"),
+        )
+    }
+
+    @Test
+    fun astroSeriesIsARealFieldAndHexoKeepsAThemeKey() {
+        val source = """
+            ---
+            title: 第一讲
+            date: 2026-01-22T20:55:12+08:00
+            series: 原子物理学
+            series_index: 2
+            pinned: true
+            toc: true
+            ---
+
+            正文
+        """.trimIndent() + "\n"
+        val document = PostCodec.parse(source)
+        assertEquals(2, document.seriesIndex)
+        assertTrue(document.pinned)
+        assertEquals(listOf("toc: true"), document.extras)
+        val again = PostCodec.parse(PostCodec.render(document))
+        assertEquals(document.seriesIndex, again.seriesIndex)
+        assertEquals(true, again.pinned)
+        val peers = listOf(
+            PostSummary("source/_posts/a.md", "1", "a", "", emptyList(), emptyList(), "原子物理学", 2),
+        )
+        val fresh = PostDocument(title = "下一讲", series = "原子物理学")
+        assertEquals(3, SeriesNumbers.apply(fresh, peers, BlogSettings(engine = SiteEngine.Astro)).seriesIndex)
+        assertNull(SeriesNumbers.apply(fresh, peers, BlogSettings()).seriesIndex)
+        assertEquals(
+            listOf("order: 3"),
+            SeriesNumbers.apply(fresh, peers, BlogSettings(seriesIndexKey = "order")).extras,
+        )
+        assertEquals(setOf("原子物理学"), SeriesCatalog.names("原子物理学:\n  slug: atomic-physics\n"))
     }
 
     @Test
@@ -173,7 +221,8 @@ class RealPostsRoundTripTest {
             val again = PostCodec.parse(rendered)
             if (original.title != again.title || original.date != again.date || original.tags != again.tags ||
                 original.categories != again.categories || original.categoryKey != again.categoryKey ||
-                original.series != again.series || original.aplayer != again.aplayer ||
+                original.series != again.series || original.seriesIndex != again.seriesIndex ||
+                original.aplayer != again.aplayer || original.pinned != again.pinned ||
                 original.top != again.top || original.sticky != again.sticky ||
                 original.abbrlink != again.abbrlink || original.extras != again.extras ||
                 original.blocks != again.blocks

@@ -25,7 +25,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -117,6 +121,7 @@ import android.graphics.BitmapFactory
 import dev.mobwriter.app.core.blog.BlogService
 import dev.mobwriter.app.core.blog.HexoPaths
 import dev.mobwriter.app.core.model.Block
+import dev.mobwriter.app.core.model.SiteEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -174,8 +179,7 @@ fun EditorScreen(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         topBar = {
-            Column(Modifier.statusBarsPadding()) {
-                TopAppBar(
+            TopAppBar(
                     title = {},
                     navigationIcon = {
                         AppIconButton("返回", onClick = { leave() }) {
@@ -192,12 +196,11 @@ fun EditorScreen(
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 )
-            }
         },
         bottomBar = {
             if (viewModel.mode != WriteMode.Reading) {
                 FormatBar(
-                    modifier = Modifier.navigationBarsPadding().imePadding(),
+                    modifier = Modifier,
                     inlineEnabled = viewModel.canFormatInline(),
                     onBold = { viewModel.toggle("**") },
                     onItalic = { viewModel.toggle("*") },
@@ -437,22 +440,63 @@ private fun MetaEditor(
             Icon(Icons.Outlined.Add, contentDescription = "添加标签")
         }
     }
+    val astro = viewModel.engine == SiteEngine.Astro
     OutlinedTextField(
         viewModel.series,
         { viewModel.series = it },
-        label = { Text("系列，可不填") },
+        label = { Text(if (astro) "专栏，可不填" else "系列，可不填") },
+        supportingText = if (astro) {
+            { Text("名字要已经写在专栏名单里") }
+        } else {
+            null
+        },
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+    )
+    if (astro) {
+        OutlinedTextField(
+            viewModel.seriesIndexText,
+            { viewModel.seriesIndexText = it },
+            label = { Text("专栏序号，可不填") },
+            supportingText = { Text("留空则发布时接在同专栏最后") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
+    }
+    if (viewModel.path == null) {
+        OutlinedTextField(
+            viewModel.slug,
+            { viewModel.slug = it },
+            label = { Text("文件名，可不填") },
+            supportingText = { Text("用来做链接。不填就按标题生成") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
+    }
+    OutlinedTextField(
+        viewModel.extrasText,
+        { viewModel.extrasText = it },
+        label = { Text("其他字段") },
+        supportingText = { Text(if (astro) "如 toc: true、description: 导语" else "主题或插件字段，原样写进 Front-matter") },
+        textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace),
+        minLines = 2,
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
         Text("置顶", modifier = Modifier.weight(1f))
-        Switch(checked = viewModel.top, onCheckedChange = { viewModel.top = it })
+        if (astro) {
+            Switch(checked = viewModel.pinned, onCheckedChange = { viewModel.pinned = it })
+        } else {
+            Switch(checked = viewModel.top, onCheckedChange = { viewModel.top = it })
+        }
     }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("音乐播放器", modifier = Modifier.weight(1f))
-        Switch(checked = viewModel.aplayer, onCheckedChange = { viewModel.aplayer = it })
-    }
-    if (!viewModel.abbrlink.isNullOrBlank()) {
-        Text("固定链接 ${viewModel.abbrlink}", color = Muted, modifier = Modifier.padding(top = 4.dp))
+    if (!astro) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("音乐播放器", modifier = Modifier.weight(1f))
+            Switch(checked = viewModel.aplayer, onCheckedChange = { viewModel.aplayer = it })
+        }
+        if (!viewModel.abbrlink.isNullOrBlank()) {
+            Text("固定链接 ${viewModel.abbrlink}", color = Muted, modifier = Modifier.padding(top = 4.dp))
+        }
     }
 }
 
@@ -765,6 +809,7 @@ private fun FormatBar(
         modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
+            .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 4.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,

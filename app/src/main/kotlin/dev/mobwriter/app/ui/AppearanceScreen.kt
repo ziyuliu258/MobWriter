@@ -74,7 +74,7 @@ internal fun AppearanceScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                modifier = Modifier.statusBarsPadding(),
+                modifier = Modifier,
                 title = { Text("外观") },
                 navigationIcon = {
                     AppIconButton("返回", onClick = onClose) {

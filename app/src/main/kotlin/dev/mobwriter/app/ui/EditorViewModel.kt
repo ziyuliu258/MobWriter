@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.mobwriter.app.core.blog.BlogService
 import dev.mobwriter.app.core.blog.HexoPaths
+import dev.mobwriter.app.core.markdown.FrontMatterCodec
 import dev.mobwriter.app.core.markdown.InlineEdit
 import dev.mobwriter.app.core.markdown.parseBlocks
 import dev.mobwriter.app.core.markdown.serializeBlocks
@@ -17,6 +18,7 @@ import dev.mobwriter.app.core.markdown.unwrapLatex
 import dev.mobwriter.app.data.DraftStore
 import dev.mobwriter.app.core.model.Block
 import dev.mobwriter.app.core.model.PostDocument
+import dev.mobwriter.app.core.model.SiteEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -38,8 +40,13 @@ class EditorViewModel(
     var title by mutableStateOf("")
     var date by mutableStateOf("")
     var series by mutableStateOf("")
+    var seriesIndexText by mutableStateOf("")
+    var pinned by mutableStateOf(false)
+    var extrasText by mutableStateOf("")
+    var slug by mutableStateOf("")
     var aplayer by mutableStateOf(false)
     var top by mutableStateOf(false)
+    val engine: SiteEngine get() = blog.settings.engine
     var stickyText by mutableStateOf("")
     var abbrlink by mutableStateOf<String?>(null)
     var categoryKey by mutableStateOf<String?>(null)
@@ -88,7 +95,7 @@ class EditorViewModel(
             }
             if (remotePath == null) {
                 openedFromLocal = false
-                bind(PostDocument(date = HexoPaths.now(), blocks = listOf(Block.Paragraph(""))))
+                bind(PostDocument(date = HexoPaths.timestamp(blog.settings.engine), blocks = listOf(Block.Paragraph(""))))
                 loading = false
                 return@launch
             }
@@ -505,7 +512,13 @@ class EditorViewModel(
             blocks[index] = blocks[index].copy(
                 block = image.copy(
                     pendingFile = null,
-                    src = HexoPaths.imagePublicSrc(markdownPath, pending.substringAfterLast('/'), blog.settings.imageMode),
+                    src = HexoPaths.imagePublicSrc(
+                        markdownPath,
+                        pending.substringAfterLast('/'),
+                        blog.settings.imageMode,
+                        blog.settings.imageDirectory,
+                        blog.settings.assetsDirectory,
+                    ),
                 ),
             )
         }
@@ -515,6 +528,10 @@ class EditorViewModel(
         title = document.title
         date = document.date
         series = document.series.orEmpty()
+        seriesIndexText = document.seriesIndex?.toString().orEmpty()
+        pinned = document.pinned
+        extrasText = document.extras.joinToString("\n")
+        slug = document.slug
         aplayer = document.aplayer
         top = document.top
         stickyText = document.sticky?.toString().orEmpty()
@@ -545,6 +562,14 @@ class EditorViewModel(
         append('\u0000')
         append(series)
         append('\u0000')
+        append(seriesIndexText.trim())
+        append('\u0000')
+        append(pinned)
+        append('\u0000')
+        append(extrasText.trim())
+        append('\u0000')
+        append(slug.trim())
+        append('\u0000')
         append(aplayer)
         append('\u0000')
         append(top)
@@ -563,18 +588,21 @@ class EditorViewModel(
         path = path,
         sha = sha,
         title = title.trim(),
-        date = date.ifBlank { HexoPaths.now() },
+        date = date.ifBlank { HexoPaths.timestamp(blog.settings.engine) },
         tags = tags.toList(),
         categories = categories.toList(),
         categoryKey = categoryKey,
         hadTagsKey = hadTags || tags.isNotEmpty(),
         hadCategoriesKey = hadCategories || categories.isNotEmpty(),
         series = series.trim().ifBlank { null },
+        seriesIndex = seriesIndexText.trim().toIntOrNull(),
+        pinned = pinned,
         aplayer = aplayer,
         top = top,
         sticky = stickyText.toIntOrNull(),
         abbrlink = abbrlink,
-        extras = extras,
+        extras = if (extrasText == extras.joinToString("\n")) extras else FrontMatterCodec.extrasFromText(extrasText),
+        slug = slug.trim(),
         blocks = blocks.map { it.block },
     )
 

@@ -1,6 +1,7 @@
 package dev.mobwriter.app.core.blog
 
 import dev.mobwriter.app.core.github.GitHubClient
+import dev.mobwriter.app.core.markdown.FrontMatterCodec
 import dev.mobwriter.app.core.markdown.PostCodec
 import dev.mobwriter.app.core.model.Block
 import dev.mobwriter.app.core.model.BlogException
@@ -9,6 +10,8 @@ import dev.mobwriter.app.core.model.BuildStatus
 import dev.mobwriter.app.core.model.PostDocument
 import dev.mobwriter.app.core.model.PostSummary
 import dev.mobwriter.app.core.model.PublishReport
+import dev.mobwriter.app.core.model.SiteDefaults
+import dev.mobwriter.app.core.model.SiteEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -63,6 +66,7 @@ class BlogService(
     fun loadAvatar(): ByteArray? = loadProfile().avatar
 
     private fun readProfile(): BlogProfile {
+        if (settings.engine == SiteEngine.Astro) return BlogProfile(avatarMissing = true)
         val siteYaml = readOptionalText("_config.yml") ?: return BlogProfile()
         val author = HexoAvatar.parseAuthor(siteYaml)
         val site = HexoAvatar.parseSite(siteYaml)
@@ -94,14 +98,15 @@ class BlogService(
         val oldSha = document.sha
         val directory = if (asDraft) HexoPaths.draftsDirectory(settings.postsPath) else settings.postsPath.trim().trim('/')
         val staying = oldPath != null && oldPath.substringBeforeLast('/', "") == directory
-        val preferred = HexoPaths.join(directory, HexoPaths.fileNameForTitle(document.title))
+        val fileName = HexoPaths.fileNameFor(document.title, document.slug)
+        val preferred = HexoPaths.join(directory, fileName)
         val existingCopySha = if (asDraft && retainOriginal && !staying) shaOf(preferred) else null
         val path = when {
             staying -> oldPath!!
             existingCopySha != null -> preferred
-            else -> uniquePath(directory, HexoPaths.fileNameForTitle(document.title))
+            else -> uniquePath(directory, fileName)
         }
-        val prepared = uploadImages(document, path)
+        val prepared = uploadImages(shapeForSite(document), path)
         val markdown = PostCodec.render(prepared.copy(path = path))
         val shaForWrite = when {
             staying -> oldSha
@@ -128,7 +133,8 @@ class BlogService(
             }
         }
         val build = if (asDraft || !settings.autoBuild) {
-            BuildStatus.Skipped to if (asDraft) "已存成 Hexo 草稿，生成站点时不会带上它。" else "已写入仓库。自动构建已关闭。"
+            val skipped = if (asDraft) "已存成草稿，生成站点时不会带上它。" else "已写入仓库。自动构建已关闭。"
+            BuildStatus.Skipped to skipped
         } else {
             dispatch()
         }
@@ -144,6 +150,41 @@ class BlogService(
             date = document.date,
             tags = document.tags,
             categories = document.categories,
+            series = document.series,
+            seriesIndex = when (settings.engine) {
+                SiteEngine.Astro -> document.seriesIndex
+                SiteEngine.Hexo -> SeriesIndex.read(document, settings.seriesIndexKey)
+            },
+        )
+    }
+
+    /**
+     * Astro 把 series_index 当成正式字段，并要求专栏名已经写在专栏名单里。
+     * Hexo 只有设置了主题序号字段时才补号，字段名不是 series_index 时写进其他字段。
+     */
+    private fun shapeForSite(document: PostDocument): PostDocument {
+        val shaped = if (settings.engine == SiteEngine.Astro) astroDocument(document) else document
+        val series = shaped.series?.trim().orEmpty()
+        val missing = when (settings.engine) {
+            SiteEngine.Astro -> series.isNotEmpty() && shaped.seriesIndex == null
+            SiteEngine.Hexo -> series.isNotEmpty() && settings.seriesIndexKey.isNotBlank() &&
+                SeriesIndex.read(shaped, settings.seriesIndexKey) == null
+        }
+        return if (missing) SeriesNumbers.apply(shaped, listPosts(), settings) else shaped
+    }
+
+    private fun astroDocument(document: PostDocument): PostDocument {
+        val series = document.series?.trim().orEmpty()
+        if (series.isNotEmpty()) {
+            val file = HexoPaths.normalizeRepoPath(settings.seriesFile, SiteDefaults.SERIES_FILE)
+            SeriesCatalog.requireKnown(series, readOptionalText(file), file)
+        }
+        return document.copy(
+            aplayer = false,
+            top = false,
+            sticky = null,
+            abbrlink = null,
+            extras = document.extras.filterNot { FrontMatterCodec.topKey(it) in astroDropped },
         )
     }
 
@@ -152,14 +193,27 @@ class BlogService(
             if (block !is Block.Image || block.pendingFile.isNullOrBlank()) block
             else {
                 val fileName = block.pendingFile.substringAfterLast('/')
-                val remote = HexoPaths.imageRemotePath(settings.postsPath, markdownPath, fileName, settings.imageMode)
+                val remote = HexoPaths.imageRemotePath(
+                    settings.postsPath,
+                    markdownPath,
+                    fileName,
+                    settings.imageMode,
+                    settings.imageDirectory,
+                    settings.assetsDirectory,
+                )
                 val bytes = readLocal(block.pendingFile)
                 val existing = runCatching {
                     github.readText(settings.owner, settings.repo, remote, settings.branch).second
                 }.getOrNull()
                 github.write(settings.owner, settings.repo, remote, bytes, "配图：$fileName", settings.branch, existing)
                 block.copy(
-                    src = HexoPaths.imagePublicSrc(markdownPath, fileName, settings.imageMode),
+                    src = HexoPaths.imagePublicSrc(
+                        markdownPath,
+                        fileName,
+                        settings.imageMode,
+                        settings.imageDirectory,
+                        settings.assetsDirectory,
+                    ),
                     pendingFile = null,
                 )
             }
@@ -188,10 +242,24 @@ class BlogService(
     private fun dispatch(): Pair<BuildStatus, String> {
         val code = github.dispatch(settings.owner, settings.repo, settings.workflow, settings.branch)
         return when (code) {
-            204 -> BuildStatus.Started to "文章已提交，站点开始按仓库里的 Hexo 配置构建。"
-            404 -> BuildStatus.WorkflowMissing to "文章已写入仓库。还没有自动构建工作流，站点要等下次在电脑上执行 hexo 部署后更新。模板在应用项目的 deploy/publish.yml。"
+            204 -> BuildStatus.Started to startedDetail()
+            404 -> BuildStatus.WorkflowMissing to missingWorkflowDetail()
             401, 403 -> BuildStatus.Failed to "文章已写入仓库，但令牌不能触发 Actions。"
             else -> BuildStatus.Failed to "文章已写入仓库，自动构建没有启动（$code）。"
         }
+    }
+
+    private fun startedDetail(): String = when (settings.engine) {
+        SiteEngine.Hexo -> "文章已提交，站点开始按仓库里的 Hexo 配置构建。"
+        SiteEngine.Astro -> "文章已提交，站点开始构建。"
+    }
+
+    private fun missingWorkflowDetail(): String = when (settings.engine) {
+        SiteEngine.Hexo -> "文章已写入仓库。还没有自动构建工作流，站点要等下次在电脑上执行 hexo 部署后更新。模板在应用项目的 deploy/publish.yml。"
+        SiteEngine.Astro -> "文章已写入仓库。还没有自动构建工作流，站点要等下次部署后更新。"
+    }
+
+    private companion object {
+        val astroDropped = setOf("top", "aplayer", "sticky", "abbrlink", "mathjax", "updated")
     }
 }
