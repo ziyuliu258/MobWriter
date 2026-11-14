@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -152,7 +153,7 @@ private fun PaletteControl(selected: PaletteChoice, onSelect: (PaletteChoice) ->
             row.forEach { palette ->
                 val choice = PaletteChoice.preset(palette)
                 PaletteSwatch(
-                    color = Color(palette.accent),
+                    color = opaque(palette.accent),
                     label = palette.label,
                     chosen = selected.key == choice.key,
                     modifier = Modifier.weight(1f),
@@ -167,7 +168,7 @@ private fun PaletteControl(selected: PaletteChoice, onSelect: (PaletteChoice) ->
     ) {
         val custom = selected.customAccent
         PaletteSwatch(
-            color = Color(custom ?: 0x888888),
+            color = opaque(custom ?: 0x888888),
             label = "自定义",
             chosen = custom != null,
             modifier = Modifier.weight(1f),
@@ -256,7 +257,7 @@ private fun CustomColorDialog(initial: Int, onDismiss: () -> Unit, onPick: (Int)
                         .fillMaxWidth()
                         .height(36.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color(mixed)),
+                        .background(opaque(mixed)),
                 )
                 ColorChannel("红", red) { red = it }
                 ColorChannel("绿", green) { green = it }

@@ -10,6 +10,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -34,7 +35,7 @@ internal val LocalAppearance = compositionLocalOf { Appearance() }
  * 深色下把主色提亮，压在深底上仍看得清；自定义的主色同样处理。
  */
 internal fun colorsFor(palette: PaletteChoice, dark: Boolean): ColorScheme {
-    val accent = Color(palette.preset?.accent ?: palette.customAccent ?: Cinnabar.value.toInt())
+    val accent = opaque(palette.preset?.accent ?: palette.customAccent ?: (Cinnabar.toArgb() and 0xFFFFFF))
     val primary = if (dark) accent.lightened() else accent
     val onPrimary = if (primary.luminance() > 0.5f) Ink else Color(0xFFFFF8F2)
     return if (dark) {
@@ -62,6 +63,9 @@ internal fun colorsFor(palette: PaletteChoice, dark: Boolean): ColorScheme {
         )
     }
 }
+
+/** 存的是 RRGGBB，补上不透明，否则主色和色块会画成全透明。 */
+internal fun opaque(rgb: Int): Color = Color(0xFF000000.toInt() or (rgb and 0xFFFFFF))
 
 /** 往纸色上靠，深色模式里主色不至于变成一块黑。 */
 private fun Color.lightened(): Color = Color(

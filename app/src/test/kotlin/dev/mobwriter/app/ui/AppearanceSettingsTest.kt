@@ -76,6 +76,9 @@ class AppearanceSettingsTest {
         assertEquals(false, paper.primary == claude.primary)
         assertEquals(false, paper.primary == custom.primary)
         assertEquals(false, claude.primary == custom.primary)
+        assertEquals(1f, paper.primary.alpha, 0.001f)
+        assertEquals(1f, custom.primary.alpha, 0.001f)
+        assertEquals(1f, opaque(0x8E3B32).alpha, 0.001f)
         assertEquals(1.21f, ArticleType.FORMULA_EM, 0.0001f)
         assertEquals(ArticleType.scaled(ArticleType.BODY_SP, FontScale.of(115)) * 1.21f, ArticleType.formulaSp(FontScale.of(115)), 0.0001f)
     }
