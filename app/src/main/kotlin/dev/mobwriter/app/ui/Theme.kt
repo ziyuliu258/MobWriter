@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import dev.mobwriter.app.core.model.Appearance
 import dev.mobwriter.app.core.model.ArticleType
-import dev.mobwriter.app.core.model.FontStep
+import dev.mobwriter.app.core.model.FontScale
 
 val Paper = Color(0xFFF7F3EA)
 val Ink = Color(0xFF1E1A16)
@@ -49,29 +49,32 @@ private val DarkColors = darkColorScheme(
     onSurface = Color(0xFFF3EBDD),
 )
 
-private val BaseTypography = Typography(
-    headlineMedium = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 28.sp, lineHeight = 36.sp),
-    titleLarge = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 22.sp, lineHeight = 30.sp),
-    bodyLarge = TextStyle(fontFamily = FontFamily.Serif, fontSize = 17.sp, lineHeight = 28.sp),
-)
+/** 整套排版都从 Material 默认缩到合适的大小，标准档就是这个大小，不再只缩三个样式。 */
+private val BaseTypography = Typography().scaledBy(0.85f).let { scaled ->
+    scaled.copy(
+        headlineMedium = scaled.headlineMedium.copy(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold),
+        titleLarge = scaled.titleLarge.copy(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold),
+        bodyLarge = scaled.bodyLarge.copy(fontFamily = FontFamily.Serif),
+    )
+}
 
-internal fun typographyFor(step: FontStep): Typography = BaseTypography.scaledBy(step.scale)
+internal fun typographyFor(scale: FontScale): Typography = BaseTypography.scaledBy(scale.scale)
 
-internal fun articleBodyStyle(step: FontStep): TextStyle = TextStyle(
+internal fun articleBodyStyle(scale: FontScale): TextStyle = TextStyle(
     fontFamily = FontFamily.Serif,
-    fontSize = ArticleType.scaled(ArticleType.BODY_SP, step).sp,
-    lineHeight = ArticleType.scaled(ArticleType.BODY_LINE_SP, step).sp,
+    fontSize = ArticleType.scaled(ArticleType.BODY_SP, scale).sp,
+    lineHeight = ArticleType.scaled(ArticleType.BODY_LINE_SP, scale).sp,
 )
 
-internal fun articleTitleStyle(step: FontStep): TextStyle = TextStyle(
+internal fun articleTitleStyle(scale: FontScale): TextStyle = TextStyle(
     fontFamily = FontFamily.Serif,
     fontWeight = FontWeight.SemiBold,
-    fontSize = ArticleType.scaled(ArticleType.TITLE_SP, step).sp,
-    lineHeight = ArticleType.scaled(ArticleType.TITLE_LINE_SP, step).sp,
+    fontSize = ArticleType.scaled(ArticleType.TITLE_SP, scale).sp,
+    lineHeight = ArticleType.scaled(ArticleType.TITLE_LINE_SP, scale).sp,
 )
 
-internal fun articleHeadingSize(level: Int, step: FontStep): TextUnit =
-    ArticleType.scaled(ArticleType.headingSp(level), step).sp
+internal fun articleHeadingSize(level: Int, scale: FontScale): TextUnit =
+    ArticleType.scaled(ArticleType.headingSp(level), scale).sp
 
 @Composable
 fun MobWriterTheme(

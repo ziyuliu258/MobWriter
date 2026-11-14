@@ -3,7 +3,7 @@ package dev.mobwriter.app.data
 import android.content.Context
 import android.content.SharedPreferences
 import dev.mobwriter.app.core.model.Appearance
-import dev.mobwriter.app.core.model.FontStep
+import dev.mobwriter.app.core.model.FontScale
 
 /** 外观存在单独的偏好里，账号仓库清掉旧键时碰不到它。 */
 internal class AppearanceStore internal constructor(
@@ -14,14 +14,14 @@ internal class AppearanceStore internal constructor(
     )
 
     fun load(): Appearance = Appearance(
-        ui = FontStep.fromStored(prefs.getString(UI, null)),
-        article = FontStep.fromStored(prefs.getString(ARTICLE, null)),
+        ui = FontScale.fromStored(prefs.getString(UI, null)),
+        article = FontScale.fromStored(prefs.getString(ARTICLE, null)),
     )
 
     fun save(appearance: Appearance) {
         prefs.edit()
-            .putString(UI, appearance.ui.name)
-            .putString(ARTICLE, appearance.article.name)
+            .putString(UI, appearance.ui.percent.toString())
+            .putString(ARTICLE, appearance.article.percent.toString())
             .commit()
     }
 

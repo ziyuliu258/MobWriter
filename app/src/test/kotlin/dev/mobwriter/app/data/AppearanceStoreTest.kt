@@ -6,7 +6,7 @@ import dev.mobwriter.app.core.model.AccountSession
 import dev.mobwriter.app.core.model.Appearance
 import dev.mobwriter.app.core.model.BlogAccount
 import dev.mobwriter.app.core.model.BlogSettings
-import dev.mobwriter.app.core.model.FontStep
+import dev.mobwriter.app.core.model.FontScale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Before
@@ -26,22 +26,23 @@ class AppearanceStoreTest {
     }
 
     @Test
-    fun missingOrUnknownValuesUseTheCurrentSize() {
+    fun missingOrUnknownValuesUseTheStandardSize() {
         val prefs = context.getSharedPreferences("appearance-blank", Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
         assertEquals(Appearance(), AppearanceStore(prefs).load())
-        prefs.edit().putString("ui", "nope").putString("article", FontStep.Large.name).commit()
+        prefs.edit().putString("ui", "nope").putString("article", "120").commit()
         val loaded = AppearanceStore(prefs).load()
-        assertEquals(FontStep.Standard, loaded.ui)
-        assertEquals(FontStep.Large, loaded.article)
+        assertEquals(FontScale.STANDARD, loaded.ui.percent)
+        assertEquals(120, loaded.article.percent)
     }
 
     @Test
     fun choicesSurviveARestartAndAnAccountSave() {
         val store = AppearanceStore(context)
-        val chosen = Appearance(ui = FontStep.Small, article = FontStep.ExtraLarge)
+        val chosen = Appearance(ui = FontScale.of(75), article = FontScale.of(125))
         store.save(chosen)
         assertEquals(chosen, AppearanceStore(context).load())
+        assertEquals("75", context.getSharedPreferences(AppearanceStore.FILE, Context.MODE_PRIVATE).getString("ui", null))
 
         val accountPrefs = context.getSharedPreferences("appearance-account-split", Context.MODE_PRIVATE)
         accountPrefs.edit().clear().commit()
