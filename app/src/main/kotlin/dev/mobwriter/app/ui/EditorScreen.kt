@@ -724,6 +724,10 @@ private fun TableCard(id: Long, table: Block.Table, viewModel: EditorViewModel, 
 
 @Composable
 private fun TableRow(cells: List<String>, width: Int, style: TextStyle, onCell: (Int, String) -> Unit) {
+    val accent = Cinnabar
+    val secondary = Moss
+    val quiet = Muted
+    val ground = FormulaGround
     Row {
         repeat(width) { column ->
             var text by remember { mutableStateOf(cells.getOrElse(column) { "" }) }
@@ -731,7 +735,7 @@ private fun TableRow(cells: List<String>, width: Int, style: TextStyle, onCell: 
                 value = text,
                 onValueChange = { text = it; onCell(column, it) },
                 textStyle = style.copy(fontSize = articleSp(15f)),
-                visualTransformation = remember { MarkdownVisualTransformation() },
+                visualTransformation = remember(accent, secondary) { MarkdownVisualTransformation(accent, secondary, quiet, ground) },
                 modifier = Modifier.width(140.dp).padding(4.dp),
             )
         }
@@ -791,6 +795,7 @@ private fun ToolIcon(label: String, enabled: Boolean, onClick: () -> Unit, icon:
 
 @Composable
 internal fun QuoteFrame(content: @Composable () -> Unit) {
+    val accent = Cinnabar
     // 行内公式是 SubcomposeLayout，Row 的 IntrinsicSize 会向它要固有高度并直接崩溃。
     // 色条改在内容背后绘制，高度跟正文走，不再做固有测量。
     Column(
@@ -798,7 +803,7 @@ internal fun QuoteFrame(content: @Composable () -> Unit) {
             .fillMaxWidth()
             .padding(vertical = 4.dp)
             .drawBehind {
-                drawRect(color = Cinnabar, size = Size(3.dp.toPx(), size.height))
+                drawRect(color = accent, size = Size(3.dp.toPx(), size.height))
             }
             .padding(start = 17.dp),
     ) { content() }
@@ -910,6 +915,10 @@ private fun ModeIcon(target: WriteMode, current: WriteMode, onSelect: (WriteMode
 
 @Composable
 private fun SourceEditor(viewModel: EditorViewModel, body: TextStyle) {
+    val accent = Cinnabar
+    val secondary = Moss
+    val quiet = Muted
+    val ground = FormulaGround
     var field by remember { mutableStateOf(TextFieldValue(viewModel.sourceText)) }
     LaunchedEffect(viewModel.sourceRevision) {
         val start = viewModel.sourceSelectionStart.coerceIn(0, viewModel.sourceText.length)
@@ -924,7 +933,9 @@ private fun SourceEditor(viewModel: EditorViewModel, body: TextStyle) {
         },
         textStyle = body.copy(fontFamily = FontFamily.Serif, fontSize = articleSp(16f), lineHeight = articleSp(26f)),
         cursorBrush = SolidColor(Cinnabar),
-        visualTransformation = remember { SourceMarkupTransformation() },
+        visualTransformation = remember(accent, secondary) {
+            SourceMarkupTransformation(quiet, MarkdownVisualTransformation(accent, secondary, quiet, ground))
+        },
         modifier = Modifier.fillMaxWidth().heightIn(min = 320.dp),
     )
 }

@@ -7,6 +7,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -21,48 +22,80 @@ import dev.mobwriter.app.core.model.ArticleType
 import dev.mobwriter.app.core.model.FontScale
 import dev.mobwriter.app.core.model.PaletteChoice
 
-val Paper = Color(0xFFF7F3EA)
-val Ink = Color(0xFF1E1A16)
-val Cinnabar = Color(0xFF8E3B32)
-val Moss = Color(0xFF215C45)
-val FormulaGround = Color(0xFFE5F0EA)
-val Muted = Color(0xFF8A8175)
+private val DefaultInk = Color(0xFF1E1A16)
+private val DefaultCinnabar = Color(0xFF8E3B32)
 
 internal val LocalAppearance = compositionLocalOf { Appearance() }
 
+/** 页面底色。自定义背景图铺在它上面，换配色时跟着主色变。 */
+val Paper: Color
+    @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.background
+
+/** 强调色：按钮、选中项、链接、光标。 */
+val Cinnabar: Color
+    @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.primary
+
+/** 次强调色：公式、标记。 */
+val Moss: Color
+    @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.secondary
+
+val Ink: Color
+    @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.onBackground
+
+/** 次要文字和图标。 */
+val Muted: Color
+    @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.outline
+
+/** 公式底色，跟着主色走。 */
+val FormulaGround: Color
+    @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.surfaceVariant
+
 /**
- * 配色只换主色，纸色和文字保持现在这套。
+ * 整套配色都跟着主色走：页面底色、卡片、按钮、选中项、分隔线。
  * 深色下把主色提亮，压在深底上仍看得清；自定义的主色同样处理。
  */
 internal fun colorsFor(palette: PaletteChoice, dark: Boolean): ColorScheme {
-    val accent = opaque(palette.preset?.accent ?: palette.customAccent ?: (Cinnabar.toArgb() and 0xFFFFFF))
+    val accent = opaque(palette.preset?.accent ?: palette.customAccent ?: (DefaultCinnabar.toArgb() and 0xFFFFFF))
     val primary = if (dark) accent.lightened() else accent
-    val onPrimary = if (primary.luminance() > 0.5f) Ink else Color(0xFFFFF8F2)
+    val onPrimary = if (primary.luminance() > 0.5f) DefaultInk else Color(0xFFFFF8F2)
+    val paper = if (dark) Color(0xFF16130F) else accent.tinted(Color(0xFFF7F3EA), 0.90f)
+    val surface = if (dark) Color(0xFF221E19) else accent.tinted(Color(0xFFFFFBF5), 0.93f)
+    val variant = if (dark) Color(0xFF3A332B) else accent.tinted(Color(0xFFE7E0D4), 0.84f)
+    val outline = if (dark) accent.lightened() else accent.tinted(Color(0xFFD3C8B8), 0.72f)
+    val secondary = if (dark) accent.lightened() else accent.tinted(Color(0xFF215C45), 0.35f)
     return if (dark) {
         darkColorScheme(
             primary = primary,
             onPrimary = onPrimary,
-            secondary = Moss,
-            background = Color(0xFF16130F),
-            surface = Color(0xFF221E19),
-            surfaceVariant = Color(0xFF3A332B),
+            secondary = secondary,
+            background = paper,
+            surface = surface,
+            surfaceVariant = variant,
             onBackground = Color(0xFFF3EBDD),
             onSurface = Color(0xFFF3EBDD),
+            outline = outline,
         )
     } else {
         lightColorScheme(
             primary = primary,
             onPrimary = onPrimary,
-            secondary = Moss,
-            background = Paper,
-            surface = Color(0xFFFFFBF5),
-            surfaceVariant = Color(0xFFE7E0D4),
-            onBackground = Ink,
-            onSurface = Ink,
-            outline = Color(0xFFD3C8B8),
+            secondary = secondary,
+            background = paper,
+            surface = surface,
+            surfaceVariant = variant,
+            onBackground = DefaultInk,
+            onSurface = DefaultInk,
+            outline = outline,
         )
     }
 }
+
+/** 底色带着主色的一点颜色，换配色时整页都变，不只有按钮变。 */
+private fun Color.tinted(base: Color, keep: Float): Color = Color(
+    red = base.red * keep + red * (1f - keep),
+    green = base.green * keep + green * (1f - keep),
+    blue = base.blue * keep + blue * (1f - keep),
+)
 
 /** 存的是 RRGGBB，补上不透明，否则主色和色块会画成全透明。 */
 internal fun opaque(rgb: Int): Color = Color(0xFF000000.toInt() or (rgb and 0xFFFFFF))

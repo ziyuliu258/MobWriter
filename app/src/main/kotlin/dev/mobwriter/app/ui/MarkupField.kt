@@ -1,6 +1,7 @@
 package dev.mobwriter.app.ui
 
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -25,7 +26,12 @@ import androidx.compose.ui.text.style.TextDecoration
 import dev.mobwriter.app.core.markdown.InlineKind
 import dev.mobwriter.app.core.markdown.InlineMarkup
 
-class MarkdownVisualTransformation : VisualTransformation {
+class MarkdownVisualTransformation(
+    internal val accent: Color,
+    internal val secondary: Color,
+    internal val quiet: Color,
+    internal val ground: Color,
+) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
         val presented = InlineMarkup.present(text.text)
         val annotated = buildAnnotatedString {
@@ -45,7 +51,10 @@ class MarkdownVisualTransformation : VisualTransformation {
     }
 }
 
-class SourceMarkupTransformation : VisualTransformation {
+class SourceMarkupTransformation(
+    private val quiet: Color,
+    private val styles: MarkdownVisualTransformation,
+) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
         val presented = InlineMarkup.present(text.text)
         val annotated = buildAnnotatedString {
@@ -53,11 +62,11 @@ class SourceMarkupTransformation : VisualTransformation {
             presented.spans.forEach { span ->
                 val start = presented.dispToOrig[span.start.coerceIn(presented.dispToOrig.indices)]
                 val end = presented.dispToOrig[span.end.coerceIn(presented.dispToOrig.indices)]
-                if (end > start) addStyle(styleFor(span.kind), start, end)
+                if (end > start) addStyle(styles.styleFor(span.kind), start, end)
             }
             presented.markers.forEach { marker ->
                 if (marker.endExclusive > marker.start) {
-                    addStyle(SpanStyle(color = Muted), marker.start, marker.endExclusive.coerceAtMost(text.length))
+                    addStyle(SpanStyle(color = quiet), marker.start, marker.endExclusive.coerceAtMost(text.length))
                 }
             }
         }
@@ -65,16 +74,16 @@ class SourceMarkupTransformation : VisualTransformation {
     }
 }
 
-private fun styleFor(kind: InlineKind): SpanStyle = when (kind) {
+private fun MarkdownVisualTransformation.styleFor(kind: InlineKind): SpanStyle = when (kind) {
     InlineKind.Bold -> SpanStyle(fontWeight = FontWeight.SemiBold)
     InlineKind.Italic -> SpanStyle(fontStyle = FontStyle.Italic)
     InlineKind.Strike -> SpanStyle(textDecoration = TextDecoration.LineThrough)
-    InlineKind.Code -> SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0xFFE7E0D4))
-    InlineKind.Link -> SpanStyle(color = Cinnabar, textDecoration = TextDecoration.Underline)
+    InlineKind.Code -> SpanStyle(fontFamily = FontFamily.Monospace, background = ground)
+    InlineKind.Link -> SpanStyle(color = accent, textDecoration = TextDecoration.Underline)
     InlineKind.Math -> SpanStyle(
         fontFamily = FontFamily.Monospace,
-        color = Moss,
-        background = FormulaGround,
+        color = secondary,
+        background = ground,
     )
 }
 
@@ -98,6 +107,10 @@ fun MarkupField(
         }
     }
     if (!active && field.text != text) field = TextFieldValue(text)
+    val accent = Cinnabar
+    val secondary = Moss
+    val quiet = Muted
+    val ground = FormulaGround
     BasicTextField(
         value = field,
         onValueChange = {
@@ -105,8 +118,10 @@ fun MarkupField(
             onValue(it)
         },
         textStyle = textStyle,
-        cursorBrush = SolidColor(Cinnabar),
-        visualTransformation = remember { MarkdownVisualTransformation() },
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        visualTransformation = remember(accent, secondary) {
+            MarkdownVisualTransformation(accent, secondary, quiet, ground)
+        },
         modifier = modifier,
     )
 }

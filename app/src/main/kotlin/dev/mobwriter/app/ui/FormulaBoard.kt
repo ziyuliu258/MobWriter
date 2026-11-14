@@ -215,6 +215,7 @@ private fun rememberMathEm(style: TextStyle): Float {
     return mathEmPx(with(density) { font.toPx() })
 }
 
+@Composable
 private fun formulaColor(style: TextStyle): Int =
     (if (style.color == Color.Unspecified) Ink else style.color).toArgb()
 
@@ -386,6 +387,8 @@ fun InlineRich(
         }
     }
     val measurer = rememberTextMeasurer()
+    val accent = Cinnabar
+    val secondary = Moss
     val flowStyle = style.copy(
         lineHeightStyle = LineHeightStyle(
             alignment = LineHeightStyle.Alignment.Proportional,
@@ -480,7 +483,7 @@ fun InlineRich(
         parts.forEach { part ->
             when (part) {
                 is InlinePiece.Text -> {
-                    val annotated = presentText(part.markdown)
+                    val annotated = presentText(part.markdown, accent, secondary)
                     if (annotated.isNotEmpty()) takeText(annotated)
                 }
                 is InlinePiece.Math -> {
@@ -635,7 +638,7 @@ private fun recordLinks(hits: HitList, text: AnnotatedString, layout: TextLayout
     }
 }
 
-private fun presentText(markdown: String): AnnotatedString {
+private fun presentText(markdown: String, accent: Color, secondary: Color): AnnotatedString {
     val presented = InlineMarkup.present(markdown)
     return buildAnnotatedString {
         append(presented.text)
@@ -644,7 +647,7 @@ private fun presentText(markdown: String): AnnotatedString {
                 val href = span.href
                 if (href != null) addStringAnnotation("link", href, span.start, span.end)
             }
-            addStyle(linkStyle(span.kind), span.start, span.end)
+            addStyle(linkStyle(span.kind, accent, secondary), span.start, span.end)
         }
     }
 }
@@ -656,19 +659,21 @@ private fun LinkedText(
     onLink: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val annotated = remember(markdown) { presentText(markdown) }
+    val accent = Cinnabar
+    val secondary = Moss
+    val annotated = remember(markdown, accent, secondary) { presentText(markdown, accent, secondary) }
     ClickableText(annotated, modifier = modifier, style = style, onClick = { offset ->
         annotated.getStringAnnotations("link", offset, offset).firstOrNull()?.let { onLink(it.item) }
     })
 }
 
-private fun linkStyle(kind: InlineKind): SpanStyle = when (kind) {
+private fun linkStyle(kind: InlineKind, accent: Color, secondary: Color): SpanStyle = when (kind) {
     InlineKind.Bold -> SpanStyle(fontWeight = FontWeight.SemiBold)
     InlineKind.Italic -> SpanStyle(fontStyle = FontStyle.Italic)
     InlineKind.Strike -> SpanStyle(textDecoration = TextDecoration.LineThrough)
-    InlineKind.Code -> SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0xFFF3EDE3))
-    InlineKind.Link -> SpanStyle(color = Cinnabar, textDecoration = TextDecoration.Underline)
-    InlineKind.Math -> SpanStyle(fontFamily = FontFamily.Monospace, color = Moss)
+    InlineKind.Code -> SpanStyle(fontFamily = FontFamily.Monospace, background = accent.copy(alpha = 0.12f))
+    InlineKind.Link -> SpanStyle(color = accent, textDecoration = TextDecoration.Underline)
+    InlineKind.Math -> SpanStyle(fontFamily = FontFamily.Monospace, color = secondary)
 }
 
 private sealed interface InlinePiece {

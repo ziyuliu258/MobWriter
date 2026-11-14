@@ -182,7 +182,7 @@ private fun PaletteControl(selected: PaletteChoice, onSelect: (PaletteChoice) ->
         }
     }
     Text(
-        "主色会用在按钮、选中项和强调文字上，纸色和文字不变。",
+        "按钮、选中项、页面底色都会换成这个颜色。",
         color = Muted,
         modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
     )
@@ -305,7 +305,7 @@ private fun BackgroundControl(selected: BackgroundChoice, onSelect: (BackgroundC
                 onSelect(BackgroundChoice.plain())
             },
         ) {
-            Box(Modifier.fillMaxSize().background(Paper))
+            Box(Modifier.fillMaxSize().background(Color(0xFFF7F3EA)))
         }
         BackgroundOption(
             label = "自定义图片",
