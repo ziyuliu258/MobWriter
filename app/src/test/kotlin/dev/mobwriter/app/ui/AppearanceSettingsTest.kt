@@ -7,10 +7,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.isNotSelected
+import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.font.FontFamily
 import androidx.test.core.app.ApplicationProvider
@@ -18,6 +22,7 @@ import dev.mobwriter.app.core.model.Appearance
 import dev.mobwriter.app.core.model.ArticleType
 import dev.mobwriter.app.core.model.BlogSettings
 import dev.mobwriter.app.core.model.FontScale
+import dev.mobwriter.app.core.model.PaletteChoice
 import dev.mobwriter.app.data.AppearanceStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -63,6 +68,14 @@ class AppearanceSettingsTest {
             articleHeadingSize(3, FontScale.of(115)).value,
             0.01f,
         )
+        val paper = colorsFor(PaletteChoice.fromStored(null), dark = false)
+        val claude = colorsFor(PaletteChoice.fromStored("claude"), dark = false)
+        val custom = colorsFor(PaletteChoice.custom(0x336699), dark = false)
+        assertEquals(paper.background, claude.background)
+        assertEquals(paper.onBackground, custom.onBackground)
+        assertEquals(false, paper.primary == claude.primary)
+        assertEquals(false, paper.primary == custom.primary)
+        assertEquals(false, claude.primary == custom.primary)
         assertEquals(1.21f, ArticleType.FORMULA_EM, 0.0001f)
         assertEquals(ArticleType.scaled(ArticleType.BODY_SP, FontScale.of(115)) * 1.21f, ArticleType.formulaSp(FontScale.of(115)), 0.0001f)
     }
@@ -107,7 +120,7 @@ class AppearanceSettingsTest {
         rule.onNodeWithContentDescription("文章字体大小 130%").assertExists()
         rule.onNodeWithContentDescription("界面字体大小 标准").assertExists()
         rule.onNodeWithContentDescription("返回").performClick()
-        rule.onNodeWithText("界面 标准 · 文章 130%").assertIsDisplayed()
+        rule.onNodeWithText("界面 标准 · 文章 130% · 墨哺").assertIsDisplayed()
         rule.onNodeWithText("检查更新").assertIsDisplayed()
         rule.onNodeWithText("账户信息").assertIsDisplayed()
 
@@ -119,7 +132,7 @@ class AppearanceSettingsTest {
         rule.onNodeWithContentDescription("界面字体大小 70%").assertExists()
         rule.onNodeWithContentDescription("文章字体大小 130%").assertExists()
         rule.onNodeWithContentDescription("返回").performClick()
-        rule.onNodeWithText("界面 70% · 文章 130%").assertIsDisplayed()
+        rule.onNodeWithText("界面 70% · 文章 130% · 墨哺").assertIsDisplayed()
         rule.onNodeWithText("检查更新").performClick()
         rule.onNodeWithText("界面字体大小").assertDoesNotExist()
         rule.onNodeWithText("账户信息").assertIsDisplayed()
@@ -128,6 +141,45 @@ class AppearanceSettingsTest {
         val stored = AppearanceStore(context).load()
         assertEquals(FontScale.MIN, stored.ui.percent)
         assertEquals(FontScale.MAX, stored.article.percent)
+        assertNull(saved)
+    }
+
+    @Test
+    fun paletteAndBackgroundApplyImmediatelyAndStayOutOfTheAccount() {
+        val appearance = mutableStateOf(Appearance())
+        var saved: BlogSettings? = null
+        val store = AppearanceStore(context)
+        rule.setContent {
+            val current by appearance
+            MobWriterTheme(current) {
+                SetupScreen(
+                    initial = BlogSettings(owner = "example-owner", repo = "example-app", token = "token"),
+                    onSave = { saved = it },
+                    onClose = {},
+                    appearance = current,
+                    onAppearance = {
+                        appearance.value = it
+                        store.save(it)
+                    },
+                )
+            }
+        }
+        rule.onNodeWithText("外观").performClick()
+        rule.onNodeWithText("配色").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("背景").performScrollTo().assertIsDisplayed()
+        rule.onNode(hasContentDescription("配色 墨哺") and isSelected()).assertExists()
+        rule.onNode(hasContentDescription("背景 默认") and isSelected()).assertExists()
+        rule.onNodeWithText("GitHub 令牌").assertDoesNotExist()
+
+        rule.onNodeWithContentDescription("配色 Claude").performClick()
+        rule.onNode(hasContentDescription("配色 Claude") and isSelected()).assertExists()
+        rule.onNode(hasContentDescription("配色 墨哺") and isNotSelected()).assertExists()
+        rule.onNodeWithContentDescription("返回").performClick()
+        rule.onNodeWithText("界面 标准 · 文章 标准 · Claude").assertIsDisplayed()
+
+        val stored = AppearanceStore(context).load()
+        assertEquals(PaletteChoice.preset(dev.mobwriter.app.core.model.Palette.Claude).key, stored.palette.key)
+        assertEquals(true, stored.background.isPlain)
         assertNull(saved)
     }
 

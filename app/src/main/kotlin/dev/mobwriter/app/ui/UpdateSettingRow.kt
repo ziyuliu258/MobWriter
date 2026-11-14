@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.CircularProgressIndicator
@@ -155,12 +154,6 @@ internal fun UpdateSettingRow() {
                     Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = "打开发布页")
                 }
             }
-            Icon(
-                Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                contentDescription = null,
-                tint = Muted,
-                modifier = Modifier.clickable(enabled = !busy, onClick = ::check),
-            )
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
     }

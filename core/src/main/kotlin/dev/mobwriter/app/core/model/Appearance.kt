@@ -27,11 +27,81 @@ data class FontScale(val percent: Int) {
     }
 }
 
+/**
+ * 一套配色。`key` 是预设的名字；自定义时是 `custom#RRGGBB`，带着自己选的主色。
+ * 读不懂的值回到「墨哺」，也就是现在这套。
+ */
+data class PaletteChoice(val key: String) {
+    val preset: Palette? get() = Palette.entries.firstOrNull { it.key == key }
+
+    val customAccent: Int? get() = CUSTOM.matchEntire(key)?.groupValues?.get(1)?.toIntOrNull(16)
+
+    val label: String get() = preset?.label ?: if (customAccent != null) "自定义" else Palette.Cinnabar.label
+
+    fun summary(): String = preset?.label ?: customAccent?.let { "#%06X".format(it) } ?: Palette.Cinnabar.label
+
+    companion object {
+        private val CUSTOM = Regex("custom#([0-9A-Fa-f]{6})")
+
+        fun preset(palette: Palette): PaletteChoice = PaletteChoice(palette.key)
+
+        fun custom(rgb: Int): PaletteChoice = PaletteChoice("custom#%06X".format(rgb and 0xFFFFFF))
+
+        fun fromStored(value: String?): PaletteChoice {
+            if (value.isNullOrBlank()) return preset(Palette.Cinnabar)
+            val choice = PaletteChoice(value.trim())
+            return if (choice.preset != null || choice.customAccent != null) choice else preset(Palette.Cinnabar)
+        }
+    }
+}
+
+/** 预设配色。`accent` 是浅色下的主色，背景和文字沿用现在这套纸色。 */
+enum class Palette(val key: String, val label: String, val accent: Int) {
+    Cinnabar("cinnabar", "墨哺", 0x8E3B32),
+    Claude("claude", "Claude", 0xC96442),
+    Indigo("indigo", "靛蓝", 0x3F51B5),
+    Moss("moss", "青绿", 0x215C45),
+    Violet("violet", "紫色", 0x6B4C9A),
+    Amber("amber", "琥珀", 0xB5751A),
+    Slate("slate", "石板", 0x4A5562),
+}
+
+/**
+ * 背景。`none` 是现在的纸色，一张图用 `image:<名字>` 记在应用自己的目录里，不进仓库。
+ * 名字只允许字母、数字、点和横线，读不懂的值回到纸色。
+ */
+data class BackgroundChoice(val key: String) {
+    val isPlain: Boolean get() = key == PLAIN
+
+    val imageName: String? get() = key.removePrefix(IMAGE_PREFIX).takeIf { key.startsWith(IMAGE_PREFIX) && IMAGE_NAME.matches(it) }
+
+    val label: String get() = if (isPlain) "默认" else if (imageName != null) "自定义图片" else "默认"
+
+    companion object {
+        const val PLAIN = "none"
+        private const val IMAGE_PREFIX = "image:"
+        private val IMAGE_NAME = Regex("[A-Za-z0-9._-]{1,80}")
+
+        fun plain(): BackgroundChoice = BackgroundChoice(PLAIN)
+
+        fun image(name: String): BackgroundChoice? =
+            name.takeIf { IMAGE_NAME.matches(it) }?.let { BackgroundChoice(IMAGE_PREFIX + it) }
+
+        fun fromStored(value: String?): BackgroundChoice {
+            if (value.isNullOrBlank() || value == PLAIN) return plain()
+            val choice = BackgroundChoice(value.trim())
+            return if (choice.imageName != null) choice else plain()
+        }
+    }
+}
+
 data class Appearance(
     val ui: FontScale = FontScale(FontScale.STANDARD),
     val article: FontScale = FontScale(FontScale.STANDARD),
+    val palette: PaletteChoice = PaletteChoice.preset(Palette.Cinnabar),
+    val background: BackgroundChoice = BackgroundChoice.plain(),
 ) {
-    fun summary(): String = "界面 ${ui.label} · 文章 ${article.label}"
+    fun summary(): String = "界面 ${ui.label} · 文章 ${article.label} · ${palette.summary()}"
 }
 
 /**

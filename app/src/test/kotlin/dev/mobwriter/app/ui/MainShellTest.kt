@@ -85,7 +85,7 @@ class MainShellTest {
         rule.onNodeWithText("设置").assertIsDisplayed()
         rule.onNodeWithText("账户信息").assertIsDisplayed()
         rule.onNodeWithText("外观").assertIsDisplayed()
-        rule.onNodeWithText("界面 标准 · 文章 标准").assertIsDisplayed()
+        rule.onNodeWithText("界面 标准 · 文章 标准 · 墨哺").assertIsDisplayed()
         rule.onNodeWithText("检查更新").assertIsDisplayed()
         val accountTop = rule.onNodeWithText("账户信息").fetchSemanticsNode().boundsInRoot.top
         val appearanceTop = rule.onNodeWithText("外观").fetchSemanticsNode().boundsInRoot.top

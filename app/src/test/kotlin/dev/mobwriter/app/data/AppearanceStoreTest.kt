@@ -6,7 +6,9 @@ import dev.mobwriter.app.core.model.AccountSession
 import dev.mobwriter.app.core.model.Appearance
 import dev.mobwriter.app.core.model.BlogAccount
 import dev.mobwriter.app.core.model.BlogSettings
+import dev.mobwriter.app.core.model.BackgroundChoice
 import dev.mobwriter.app.core.model.FontScale
+import dev.mobwriter.app.core.model.PaletteChoice
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Before
@@ -42,7 +44,10 @@ class AppearanceStoreTest {
         val chosen = Appearance(ui = FontScale.of(75), article = FontScale.of(125))
         store.save(chosen)
         assertEquals(chosen, AppearanceStore(context).load())
-        assertEquals("75", context.getSharedPreferences(AppearanceStore.FILE, Context.MODE_PRIVATE).getString("ui", null))
+        val saved = context.getSharedPreferences(AppearanceStore.FILE, Context.MODE_PRIVATE)
+        assertEquals("75", saved.getString("ui", null))
+        assertEquals("cinnabar", saved.getString("palette", null))
+        assertEquals("none", saved.getString("background", null))
 
         val accountPrefs = context.getSharedPreferences("appearance-account-split", Context.MODE_PRIVATE)
         accountPrefs.edit().clear().commit()
@@ -53,5 +58,19 @@ class AppearanceStoreTest {
         assertFalse(accountPrefs.contains("article"))
         assertEquals(chosen, AppearanceStore(context).load())
         assertEquals("token-alpha-kept", AccountStore(accountPrefs).load().active?.settings?.token)
+    }
+
+    @Test
+    fun paletteAndBackgroundSurviveARestart() {
+        val store = AppearanceStore(context)
+        val chosen = Appearance(
+            palette = PaletteChoice.custom(0xC96442),
+            background = BackgroundChoice.image("background-1.jpg") ?: BackgroundChoice.plain(),
+        )
+        store.save(chosen)
+        val loaded = AppearanceStore(context).load()
+        assertEquals(0xC96442, loaded.palette.customAccent)
+        assertEquals("background-1.jpg", loaded.background.imageName)
+        assertEquals(FontScale.STANDARD, loaded.ui.percent)
     }
 }

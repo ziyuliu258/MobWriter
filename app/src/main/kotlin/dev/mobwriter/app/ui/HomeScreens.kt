@@ -136,6 +136,7 @@ fun MobWriterApp() {
             showSplash = false
         }
         Box(Modifier.fillMaxSize()) {
+            AppearanceBackground(appearance.background)
             AppContent(
                 appearance = appearance,
                 onAppearance = { next ->

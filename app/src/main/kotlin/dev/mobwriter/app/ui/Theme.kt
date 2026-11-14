@@ -1,5 +1,6 @@
 package dev.mobwriter.app.ui
 
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -8,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -16,6 +18,7 @@ import androidx.compose.ui.unit.sp
 import dev.mobwriter.app.core.model.Appearance
 import dev.mobwriter.app.core.model.ArticleType
 import dev.mobwriter.app.core.model.FontScale
+import dev.mobwriter.app.core.model.PaletteChoice
 
 val Paper = Color(0xFFF7F3EA)
 val Ink = Color(0xFF1E1A16)
@@ -26,27 +29,45 @@ val Muted = Color(0xFF8A8175)
 
 internal val LocalAppearance = compositionLocalOf { Appearance() }
 
-private val LightColors = lightColorScheme(
-    primary = Cinnabar,
-    onPrimary = Color(0xFFFFF8F2),
-    secondary = Moss,
-    background = Paper,
-    surface = Color(0xFFFFFBF5),
-    surfaceVariant = Color(0xFFE7E0D4),
-    onBackground = Ink,
-    onSurface = Ink,
-    outline = Color(0xFFD3C8B8),
-)
+/**
+ * 配色只换主色，纸色和文字保持现在这套。
+ * 深色下把主色提亮，压在深底上仍看得清；自定义的主色同样处理。
+ */
+internal fun colorsFor(palette: PaletteChoice, dark: Boolean): ColorScheme {
+    val accent = Color(palette.preset?.accent ?: palette.customAccent ?: Cinnabar.value.toInt())
+    val primary = if (dark) accent.lightened() else accent
+    val onPrimary = if (primary.luminance() > 0.5f) Ink else Color(0xFFFFF8F2)
+    return if (dark) {
+        darkColorScheme(
+            primary = primary,
+            onPrimary = onPrimary,
+            secondary = Moss,
+            background = Color(0xFF16130F),
+            surface = Color(0xFF221E19),
+            surfaceVariant = Color(0xFF3A332B),
+            onBackground = Color(0xFFF3EBDD),
+            onSurface = Color(0xFFF3EBDD),
+        )
+    } else {
+        lightColorScheme(
+            primary = primary,
+            onPrimary = onPrimary,
+            secondary = Moss,
+            background = Paper,
+            surface = Color(0xFFFFFBF5),
+            surfaceVariant = Color(0xFFE7E0D4),
+            onBackground = Ink,
+            onSurface = Ink,
+            outline = Color(0xFFD3C8B8),
+        )
+    }
+}
 
-private val DarkColors = darkColorScheme(
-    primary = Color(0xFFE7B2A8),
-    onPrimary = Color(0xFF3A1612),
-    secondary = Color(0xFF9DCCB4),
-    background = Color(0xFF16130F),
-    surface = Color(0xFF221E19),
-    surfaceVariant = Color(0xFF3A332B),
-    onBackground = Color(0xFFF3EBDD),
-    onSurface = Color(0xFFF3EBDD),
+/** 往纸色上靠，深色模式里主色不至于变成一块黑。 */
+private fun Color.lightened(): Color = Color(
+    red = red + (1f - red) * 0.45f,
+    green = green + (1f - green) * 0.45f,
+    blue = blue + (1f - blue) * 0.45f,
 )
 
 /** 整套排版都从 Material 默认缩到合适的大小，标准档就是这个大小，不再只缩三个样式。 */
@@ -84,7 +105,7 @@ fun MobWriterTheme(
     val dark = androidx.compose.foundation.isSystemInDarkTheme()
     CompositionLocalProvider(LocalAppearance provides appearance) {
         MaterialTheme(
-            colorScheme = if (dark) DarkColors else LightColors,
+            colorScheme = colorsFor(appearance.palette, dark),
             typography = typographyFor(appearance.ui),
             content = content,
         )
