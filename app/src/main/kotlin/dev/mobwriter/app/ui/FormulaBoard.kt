@@ -3,16 +3,24 @@ package dev.mobwriter.app.ui
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.ClickableText
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,13 +28,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -40,6 +58,7 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,6 +73,7 @@ import ru.noties.jlatexmath.awt.AndroidGraphics2D
 import java.util.concurrent.Executors
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /**
  * KaTeX 的默认字号是周围文字的 1.21 倍。Typora 和 MarkText 都沿用这个比例，
@@ -63,6 +83,28 @@ private const val MathEmScale = 1.21f
 
 private const val FormulaCacheBytes = 3 * 1024 * 1024
 private const val FormulaCacheEntries = 24
+
+/** 只挡住极端长公式，避免一张位图吃掉过多内存。正常长公式按原尺寸绘制，不再裁成 1600px。 */
+internal const val FormulaBitmapMaxSide = 8192
+internal const val FormulaBitmapMaxPixels = 4_000_000
+
+internal fun formulaBitmapScale(rawWidth: Int, rawHeight: Int): Float {
+    if (rawWidth <= 0 || rawHeight <= 0) return 1f
+    val side = min(
+        1f,
+        min(
+            FormulaBitmapMaxSide.toFloat() / rawWidth,
+            FormulaBitmapMaxSide.toFloat() / rawHeight,
+        ),
+    )
+    val pixels = rawWidth.toDouble() * rawHeight.toDouble()
+    val area = if (pixels > FormulaBitmapMaxPixels) {
+        sqrt(FormulaBitmapMaxPixels / pixels).toFloat()
+    } else {
+        1f
+    }
+    return min(side, area).coerceAtMost(1f)
+}
 
 private val mathDispatcher = Executors.newSingleThreadExecutor { runnable ->
     Thread(runnable, "formula").apply { priority = Thread.NORM_PRIORITY - 1 }
@@ -122,15 +164,10 @@ private fun renderFormula(
     val key = (if (display) "D" else "T") + ":" + emPx.roundToInt() + ":" + color + ":" + source
     board.cached(key)?.let { return it }
     val picture = try {
-        val icon = TeXFormula(source).TeXIconBuilder()
-            .setStyle(if (display) TeXConstants.STYLE_DISPLAY else TeXConstants.STYLE_TEXT)
-            .setSize(emPx)
-            .setTrueValues(true)
-            .setFGColor(ru.noties.jlatexmath.awt.Color(color))
-            .build()
+        val icon = fittedIcon(source, emPx, display, color)
         val pad = 1
-        val width = (icon.iconWidth + pad * 2).coerceIn(1, 1600)
-        val height = (icon.iconHeight + pad * 2).coerceIn(1, 900)
+        val width = (icon.iconWidth + pad * 2).coerceAtLeast(1)
+        val height = (icon.iconHeight + pad * 2).coerceAtLeast(1)
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         bitmap.density = Bitmap.DENSITY_NONE
         bitmap.eraseColor(android.graphics.Color.TRANSPARENT)
@@ -146,6 +183,27 @@ private fun renderFormula(
     }
     if (picture != null) board.store(key, picture)
     return picture
+}
+
+private fun texIcon(source: String, emPx: Float, display: Boolean, color: Int) =
+    TeXFormula(source).TeXIconBuilder()
+        .setStyle(if (display) TeXConstants.STYLE_DISPLAY else TeXConstants.STYLE_TEXT)
+        .setSize(emPx.coerceAtLeast(1f))
+        .setTrueValues(true)
+        .setFGColor(ru.noties.jlatexmath.awt.Color(color))
+        .build()
+
+/** 超过内存上限时按比例缩小字号重绘，整条公式都在位图里，而不是从右侧裁掉。 */
+private fun fittedIcon(source: String, emPx: Float, display: Boolean, color: Int): org.scilab.forge.jlatexmath.TeXIcon {
+    var size = emPx.coerceAtLeast(1f)
+    var icon = texIcon(source, size, display, color)
+    var guard = 0
+    while (guard++ < 4 && formulaBitmapScale(icon.iconWidth + 2, icon.iconHeight + 2) < 0.999f) {
+        val fit = formulaBitmapScale(icon.iconWidth + 2, icon.iconHeight + 2)
+        size = (size * fit * 0.98f).coerceAtLeast(1f)
+        icon = texIcon(source, size, display, color)
+    }
+    return icon
 }
 
 private fun mathEmPx(fontPx: Float): Float = fontPx * MathEmScale
@@ -193,24 +251,105 @@ fun FormulaImage(
         contentAlignment = Alignment.Center,
     ) {
         if (image != null) {
-            val rawWidth = image.widthPx.toFloat()
-            val rawHeight = image.heightPx.toFloat()
             val maxPx = with(density) { maxWidth.toPx() }
-            val scale = if (maxPx.isFinite() && maxPx > 0f && rawWidth > maxPx) maxPx / rawWidth else 1f
-            Image(
-                bitmap = image.bitmap,
-                contentDescription = latex,
-                contentScale = ContentScale.FillBounds,
-                modifier = Modifier.size(
-                    with(density) { (rawWidth * scale).toDp() },
-                    with(density) { (rawHeight * scale).toDp() },
-                ),
-            )
+            val overflows = maxPx.isFinite() && maxPx > 0f && image.widthPx > maxPx + 1f
+            if (overflows) {
+                OverflowFormula(image, latex, Modifier.fillMaxWidth())
+            } else {
+                Image(
+                    bitmap = image.bitmap,
+                    contentDescription = latex,
+                    contentScale = ContentScale.FillBounds,
+                    modifier = Modifier.size(
+                        with(density) { image.widthPx.toDp() },
+                        with(density) { image.heightPx.toDp() },
+                    ),
+                )
+            }
         } else if (latex.isNotBlank()) {
             androidx.compose.material3.Text(
                 latex,
                 style = style.copy(fontFamily = FontFamily.Monospace, color = Moss),
             )
+        }
+    }
+}
+
+/**
+ * 只有公式本身横向滚动，停在左右两端。垂直方向不消费，文章仍可上下滑。
+ * 右侧淡出表示后面还有内容；滑到尽头后淡出消失。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun OverflowFormula(
+    picture: FormulaPicture,
+    description: String,
+    modifier: Modifier,
+) {
+    val density = LocalDensity.current
+    val scroll = rememberScrollState()
+    val background = MaterialTheme.colorScheme.background
+    val moreOnRight = scroll.maxValue > 0 && scroll.value < scroll.maxValue
+    val holdHorizontal = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
+                Offset(available.x, 0f)
+        }
+    }
+    Box(
+        modifier
+            .clipToBounds()
+            .nestedScroll(holdHorizontal)
+            .drawWithContent {
+                drawContent()
+                if (!moreOnRight) return@drawWithContent
+                val fade = 22.dp.toPx()
+                drawRect(
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(background.copy(alpha = 0f), background.copy(alpha = 0.62f)),
+                        startX = size.width - fade,
+                        endX = size.width,
+                    ),
+                    topLeft = Offset(size.width - fade, 0f),
+                    size = Size(fade, size.height),
+                )
+            },
+    ) {
+        CompositionLocalProvider(
+            LocalOverscrollConfiguration provides null,
+            LocalLayoutDirection provides LayoutDirection.Ltr,
+        ) {
+            Box(Modifier.horizontalScroll(scroll)) {
+                Image(
+                    bitmap = picture.bitmap,
+                    contentDescription = description,
+                    contentScale = ContentScale.FillBounds,
+                    modifier = Modifier.size(
+                        with(density) { picture.widthPx.toDp() },
+                        with(density) { picture.heightPx.toDp() },
+                    ),
+                )
+            }
+        }
+    }
+}
+
+/** 轻点进入编辑。横向或纵向滑过触摸阈值都不当作点击，避免滑动公式时误进源码。 */
+internal fun Modifier.tapToEdit(onTap: () -> Unit): Modifier = pointerInput(onTap) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        val start = down.position
+        val pointer = down.id
+        val slop = viewConfiguration.touchSlop
+        var tap = true
+        while (true) {
+            val event = awaitPointerEvent()
+            val change = event.changes.firstOrNull { it.id == pointer } ?: return@awaitEachGesture
+            if ((change.position - start).getDistance() > slop || change.isConsumed) tap = false
+            if (change.changedToUp()) {
+                if (tap) onTap()
+                return@awaitEachGesture
+            }
         }
     }
 }
@@ -352,25 +491,32 @@ fun InlineRich(
                             val box = emPx.roundToInt().coerceAtLeast(refAscent)
                             addSlot(Slot(width = box, ascent = (box * 0.75f).roundToInt(), descent = (box * 0.25f).roundToInt()))
                         }
-                    } else {
-                        var width = picture.widthPx
-                        var height = picture.heightPx
-                        var baseline = picture.baselinePx
-                        if (width > maxWidth && maxWidth > 0) {
-                            val scale = maxWidth.toFloat() / width
-                            width = maxWidth
-                            height = (height * scale).roundToInt().coerceAtLeast(1)
-                            baseline = (baseline * scale).roundToInt().coerceIn(0, height)
-                        }
-                        val descent = (height - baseline).coerceAtLeast(0)
+                    } else if (picture.widthPx > maxWidth && maxWidth > 0) {
+                        if (x > 0) closeLine()
+                        val descent = (picture.heightPx - picture.baselinePx).coerceAtLeast(0)
                         addSlot(
                             Slot(
-                                width = width,
-                                ascent = baseline,
+                                width = maxWidth,
+                                ascent = picture.baselinePx,
                                 descent = descent,
                                 picture = picture,
-                                pictureWidth = width,
-                                pictureHeight = height,
+                                pictureWidth = picture.widthPx,
+                                pictureHeight = picture.heightPx,
+                                label = source,
+                                scrolls = true,
+                            ),
+                        )
+                        closeLine()
+                    } else {
+                        val descent = (picture.heightPx - picture.baselinePx).coerceAtLeast(0)
+                        addSlot(
+                            Slot(
+                                width = picture.widthPx,
+                                ascent = picture.baselinePx,
+                                descent = descent,
+                                picture = picture,
+                                pictureWidth = picture.widthPx,
+                                pictureHeight = picture.heightPx,
                                 label = source,
                             ),
                         )
@@ -383,7 +529,13 @@ fun InlineRich(
         val width = maxWidth.coerceAtLeast(constraints.minWidth)
         val placeables = slots.mapIndexed { index, slot ->
             val placeable = subcompose(index) {
-                if (slot.picture != null) {
+                if (slot.picture != null && slot.scrolls) {
+                    OverflowFormula(
+                        slot.picture,
+                        slot.label.orEmpty(),
+                        Modifier.fillMaxWidth(),
+                    )
+                } else if (slot.picture != null) {
                     Image(
                         bitmap = slot.picture.bitmap,
                         contentDescription = slot.label,
@@ -405,7 +557,11 @@ fun InlineRich(
             }.firstOrNull()?.measure(
                 Constraints(
                     maxWidth = slot.width.coerceAtLeast(1) + if (slot.picture == null) 8 else 0,
-                    maxHeight = (slot.ascent + slot.descent).coerceAtLeast(1),
+                    maxHeight = if (slot.scrolls) {
+                        Constraints.Infinity
+                    } else {
+                        (slot.ascent + slot.descent).coerceAtLeast(1)
+                    },
                 ),
             )
             placeable to slot
@@ -443,9 +599,10 @@ private class Slot(
     val pictureWidth: Int = 0,
     val pictureHeight: Int = 0,
     val label: String? = null,
+    val scrolls: Boolean = false,
 ) {
     fun copy(left: Int = this.left, top: Int = this.top) = Slot(
-        width, ascent, descent, left, top, text, layout, picture, pictureWidth, pictureHeight, label,
+        width, ascent, descent, left, top, text, layout, picture, pictureWidth, pictureHeight, label, scrolls,
     )
 }
 
