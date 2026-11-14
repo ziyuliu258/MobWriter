@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SwitchAccount
 import androidx.compose.material3.AlertDialog
@@ -91,11 +92,13 @@ import dev.mobwriter.app.core.blog.BlogService
 import dev.mobwriter.app.core.github.GitHubClient
 import dev.mobwriter.app.core.github.OkHttpTransport
 import dev.mobwriter.app.core.model.AccountSession
+import dev.mobwriter.app.core.model.Appearance
 import dev.mobwriter.app.core.model.BlogSettings
 import dev.mobwriter.app.core.model.ImageMode
 import dev.mobwriter.app.core.model.PostSummary
 import dev.mobwriter.app.core.model.connectionLabel
 import dev.mobwriter.app.data.AccountStore
+import dev.mobwriter.app.data.AppearanceStore
 import dev.mobwriter.app.data.AvatarCache
 import dev.mobwriter.app.data.DraftStore
 import dev.mobwriter.app.data.ImageIntake
@@ -123,14 +126,25 @@ internal data class AccountChoice(
 
 @Composable
 fun MobWriterApp() {
-    var showSplash by remember { mutableStateOf(true) }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(1100)
-        showSplash = false
-    }
-    Box(Modifier.fillMaxSize()) {
-    AppContent()
-    if (showSplash) SplashCover()
+    val context = LocalContext.current
+    val appearanceStore = remember { AppearanceStore(context) }
+    var appearance by remember { mutableStateOf(appearanceStore.load()) }
+    MobWriterTheme(appearance) {
+        var showSplash by remember { mutableStateOf(true) }
+        LaunchedEffect(Unit) {
+            kotlinx.coroutines.delay(1100)
+            showSplash = false
+        }
+        Box(Modifier.fillMaxSize()) {
+            AppContent(
+                appearance = appearance,
+                onAppearance = { next ->
+                    appearanceStore.save(next)
+                    appearance = next
+                },
+            )
+            if (showSplash) SplashCover()
+        }
     }
 }
 
@@ -152,7 +166,10 @@ private fun SplashCover() {
 }
 
 @Composable
-private fun AppContent() {
+private fun AppContent(
+    appearance: Appearance,
+    onAppearance: (Appearance) -> Unit,
+) {
     val context = LocalContext.current
     val accountStore = remember { AccountStore(context) }
     var session by remember {
@@ -261,6 +278,8 @@ private fun AppContent() {
             initial = if (screen.creating) BlogSettings() else settings,
             title = if (screen.creating) "添加账号" else "设置",
             showUpdate = !screen.creating,
+            appearance = appearance,
+            onAppearance = onAppearance,
             onSave = { updated ->
                 val wasSignedOut = session.active == null
                 val next = if (screen.creating) {
@@ -678,30 +697,42 @@ internal fun SetupScreen(
     onClose: (() -> Unit)?,
     title: String = "设置",
     showUpdate: Boolean = true,
+    appearance: Appearance = Appearance(),
+    onAppearance: (Appearance) -> Unit = {},
 ) {
-    var editingAccount by remember { mutableStateOf(false) }
-    BackHandler(enabled = showUpdate && editingAccount) { editingAccount = false }
-    if (showUpdate && !editingAccount) {
-        SettingsListScreen(
+    var page by remember { mutableStateOf(SettingsPage.List) }
+    BackHandler(enabled = showUpdate && page != SettingsPage.List) { page = SettingsPage.List }
+    when {
+        showUpdate && page == SettingsPage.List -> SettingsListScreen(
             accountLabel = initial.connectionLabel(),
-            onOpenAccount = { editingAccount = true },
+            appearance = appearance,
+            onOpenAccount = { page = SettingsPage.Account },
+            onOpenAppearance = { page = SettingsPage.Appearance },
             onClose = onClose,
         )
-    } else {
-        AccountSettingsForm(
+        showUpdate && page == SettingsPage.Appearance -> AppearanceScreen(
+            appearance = appearance,
+            onChange = onAppearance,
+            onClose = { page = SettingsPage.List },
+        )
+        else -> AccountSettingsForm(
             initial = initial,
             onSave = onSave,
-            onClose = if (showUpdate) ({ editingAccount = false }) else onClose,
+            onClose = if (showUpdate) ({ page = SettingsPage.List }) else onClose,
             title = if (showUpdate) "账户信息" else title,
         )
     }
 }
 
+private enum class SettingsPage { List, Account, Appearance }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsListScreen(
     accountLabel: String,
+    appearance: Appearance,
     onOpenAccount: () -> Unit,
+    onOpenAppearance: () -> Unit,
     onClose: (() -> Unit)?,
 ) {
     Scaffold(
@@ -723,6 +754,7 @@ private fun SettingsListScreen(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
             MeEntry(Icons.Outlined.AccountCircle, "账户信息", onOpenAccount, subtitle = accountLabel)
+            MeEntry(Icons.Outlined.FormatSize, "外观", onOpenAppearance, subtitle = appearance.summary())
             UpdateSettingRow()
         }
     }

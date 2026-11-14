@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import dev.mobwriter.app.ui.MobWriterApp
-import dev.mobwriter.app.ui.MobWriterTheme
 import dev.mobwriter.app.ui.ensureMathEngine
 
 class MainActivity : ComponentActivity() {
@@ -12,9 +11,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         ensureMathEngine(this)
         setContent {
-            MobWriterTheme {
-                MobWriterApp()
-            }
+            MobWriterApp()
         }
     }
 }

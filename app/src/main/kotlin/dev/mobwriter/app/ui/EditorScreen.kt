@@ -111,6 +111,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.graphics.BitmapFactory
@@ -131,7 +132,9 @@ fun EditorScreen(
     onBack: () -> Unit,
     onPickImage: () -> Unit,
 ) {
-    val body = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onBackground)
+    val articleStep = LocalAppearance.current.article
+    val body = articleBodyStyle(articleStep).copy(color = MaterialTheme.colorScheme.onBackground)
+    val titleStyle = articleTitleStyle(articleStep).copy(color = MaterialTheme.colorScheme.onBackground)
     var meta by remember { mutableStateOf(viewModel.path == null) }
     var visitUrl by remember { mutableStateOf<String?>(null) }
     var linkOpen by remember { mutableStateOf(false) }
@@ -249,11 +252,11 @@ fun EditorScreen(
                     BasicTextField(
                         value = viewModel.title,
                         onValueChange = { viewModel.title = it; viewModel.saveNow() },
-                        textStyle = MaterialTheme.typography.headlineMedium.copy(color = MaterialTheme.colorScheme.onBackground),
+                        textStyle = titleStyle,
                         cursorBrush = SolidColor(Cinnabar),
                         modifier = Modifier.fillMaxWidth(),
                         decorationBox = { inner ->
-                            if (viewModel.title.isEmpty()) Text("标题", style = MaterialTheme.typography.headlineMedium, color = Muted)
+                            if (viewModel.title.isEmpty()) Text("标题", style = titleStyle, color = Muted)
                             inner()
                         },
                     )
@@ -285,7 +288,7 @@ fun EditorScreen(
                 WriteMode.Reading -> {
                     item {
                         androidx.compose.foundation.text.selection.SelectionContainer {
-                            Text(viewModel.title.ifBlank { "无题" }, style = MaterialTheme.typography.headlineMedium)
+                            Text(viewModel.title.ifBlank { "无题" }, style = titleStyle)
                         }
                     }
                     items(viewModel.blocks, key = { "read-${it.id}" }) { item ->
@@ -475,7 +478,7 @@ private fun BlockCard(
     Column(Modifier.bringIntoViewRequester(bring)) {
         if (showChrome) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(blockLabel(item.block), color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+            Text(blockLabel(item.block), color = Muted, fontSize = uiSp(12f), modifier = Modifier.weight(1f))
             Box {
                 AppIconButton("更多", onClick = { menu = true }) {
                     Icon(Icons.Outlined.MoreVert, contentDescription = "更多")
@@ -510,7 +513,7 @@ private fun BlockCard(
                 formulas,
             )
             is Block.Quote -> QuoteFrame {
-                block.alert?.let { alert -> Text(alertLabel(alert), color = Cinnabar, fontSize = 12.sp) }
+                block.alert?.let { alert -> Text(alertLabel(alert), color = Cinnabar, fontSize = articleSp(12f)) }
                 RichOrEdit(block.text, item.id, 0, viewModel, body, requester, Modifier.fillMaxWidth(), onLink, formulas)
             }
             is Block.Math -> FormulaImage(block.latex, display = true, board = formulas, style = body, modifier = Modifier.fillMaxWidth())
@@ -581,7 +584,12 @@ private fun ListBlock(
     Column {
         rows.forEachIndexed { index, item ->
             Row(verticalAlignment = Alignment.Top) {
-                Text(if (ordered) "${index + 1}." else "•", modifier = Modifier.padding(top = 2.dp, end = 8.dp), color = Cinnabar)
+                Text(
+                    if (ordered) "${index + 1}." else "•",
+                    style = style,
+                    color = Cinnabar,
+                    modifier = Modifier.padding(top = 2.dp, end = 8.dp),
+                )
                 MarkupBlock(
                     id,
                     index,
@@ -605,14 +613,14 @@ private fun FormulaBox(latex: String, requester: FocusRequester, onValue: (Strin
             .background(FormulaGround, RoundedCornerShape(16.dp))
             .padding(14.dp),
     ) {
-        Text("公式", color = Moss, fontSize = 13.sp)
+        Text("公式", color = Moss, fontSize = uiSp(13f))
         BasicTextField(
             value = field,
             onValueChange = {
                 field = it
                 onValue(it.text)
             },
-            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 16.sp, lineHeight = 24.sp, color = Ink),
+            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = articleSp(16f), lineHeight = articleSp(24f), color = Ink),
             cursorBrush = SolidColor(Moss),
             modifier = Modifier
                 .fillMaxWidth()
@@ -641,14 +649,14 @@ private fun PlainBox(
 ) {
     var field by remember { mutableStateOf(TextFieldValue(value)) }
     Column(Modifier.fillMaxWidth().background(ground, RoundedCornerShape(16.dp)).padding(14.dp)) {
-        Text(label, color = Muted, fontSize = 13.sp)
+        Text(label, color = Muted, fontSize = uiSp(13f))
         BasicTextField(
             value = field,
             onValueChange = { field = it; onValue(it.text) },
             textStyle = TextStyle(
                 fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Serif,
-                fontSize = 15.sp,
-                lineHeight = 22.sp,
+                fontSize = articleSp(15f),
+                lineHeight = articleSp(22f),
                 color = MaterialTheme.colorScheme.onBackground,
             ),
             cursorBrush = SolidColor(Cinnabar),
@@ -714,7 +722,7 @@ private fun TableRow(cells: List<String>, width: Int, style: TextStyle, onCell: 
             BasicTextField(
                 value = text,
                 onValueChange = { text = it; onCell(column, it) },
-                textStyle = style.copy(fontSize = 15.sp),
+                textStyle = style.copy(fontSize = articleSp(15f)),
                 visualTransformation = remember { MarkdownVisualTransformation() },
                 modifier = Modifier.width(140.dp).padding(4.dp),
             )
@@ -827,7 +835,7 @@ private fun ReadOnlyBlock(
             Modifier.fillMaxWidth(),
         )
         is Block.Quote -> QuoteFrame {
-            block.alert?.let { Text(alertLabel(it), color = Cinnabar, fontSize = 12.sp) }
+            block.alert?.let { Text(alertLabel(it), color = Cinnabar, fontSize = articleSp(12f)) }
             InlineRich(block.text, style, formulas, onLink, Modifier.fillMaxWidth())
         }
         is Block.BulletList -> Column {
@@ -838,12 +846,12 @@ private fun ReadOnlyBlock(
                 InlineRich("${index + 1}.  $item", style, formulas, onLink, Modifier.fillMaxWidth())
             }
         }
-        is Block.Code -> Text(block.code, fontFamily = FontFamily.Monospace, modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)).padding(12.dp))
+        is Block.Code -> Text(block.code, style = style.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)).padding(12.dp))
         is Block.Math -> FormulaImage(block.latex, display = true, board = formulas, style = style, modifier = Modifier.fillMaxWidth())
         is Block.Image -> ImageCard(block, postPath, blog, editable = false) {}
         is Block.Table -> Text(block.rows.joinToString("\n") { it.joinToString("  ") }, style = style)
         is Block.Rule -> Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outline))
-        is Block.Raw -> Text(block.text, fontFamily = FontFamily.Monospace)
+        is Block.Raw -> Text(block.text, style = style.copy(fontFamily = FontFamily.Monospace))
     }
 }
 
@@ -858,7 +866,7 @@ private fun TypewriterMark() {
 
 @Composable
 private fun HeadingMark(level: Int) {
-    Text("H$level", fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+    Text("H$level", fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = uiSp(13f), color = MaterialTheme.colorScheme.onSurface)
 }
 
 @Composable
@@ -906,7 +914,7 @@ private fun SourceEditor(viewModel: EditorViewModel, body: TextStyle) {
             field = it
             viewModel.onSource(it)
         },
-        textStyle = body.copy(fontFamily = FontFamily.Serif, fontSize = 16.sp, lineHeight = 26.sp),
+        textStyle = body.copy(fontFamily = FontFamily.Serif, fontSize = articleSp(16f), lineHeight = articleSp(26f)),
         cursorBrush = SolidColor(Cinnabar),
         visualTransformation = remember { SourceMarkupTransformation() },
         modifier = Modifier.fillMaxWidth().heightIn(min = 320.dp),
@@ -919,17 +927,17 @@ private fun ReadBlock(block: Block, postPath: String?, blog: BlogService, body: 
         is Block.Paragraph -> StyledReadText(block.text, body)
         is Block.Heading -> StyledReadText(block.text, body.copy(fontSize = headingSize(block.level), fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold))
         is Block.Quote -> Column(Modifier.border(3.dp, MaterialTheme.colorScheme.surfaceVariant).padding(start = 12.dp)) {
-            block.alert?.let { Text(alertLabel(it), color = Cinnabar, fontSize = 12.sp) }
+            block.alert?.let { Text(alertLabel(it), color = Cinnabar, fontSize = articleSp(12f)) }
             StyledReadText(block.text, body)
         }
         is Block.BulletList -> Column { block.items.forEach { StyledReadText("•  $it", body) } }
         is Block.OrderedList -> Column { block.items.forEachIndexed { index, item -> StyledReadText("${index + 1}.  $item", body) } }
-        is Block.Code -> Text(block.code, fontFamily = FontFamily.Monospace, modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)).padding(12.dp))
-        is Block.Math -> Text(block.latex, fontFamily = FontFamily.Monospace, color = Moss, modifier = Modifier.fillMaxWidth().background(FormulaGround, RoundedCornerShape(12.dp)).padding(12.dp))
+        is Block.Code -> Text(block.code, style = body.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)).padding(12.dp))
+        is Block.Math -> Text(block.latex, style = body.copy(fontFamily = FontFamily.Monospace, color = Moss), modifier = Modifier.fillMaxWidth().background(FormulaGround, RoundedCornerShape(12.dp)).padding(12.dp))
         is Block.Image -> ImageCard(block, postPath, blog, editable = false) {}
         is Block.Table -> Text(block.header.joinToString("  ") + "\n" + block.rows.joinToString("\n") { it.joinToString("  ") }, style = body)
         is Block.Rule -> Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outline))
-        is Block.Raw -> Text(block.text, fontFamily = FontFamily.Monospace)
+        is Block.Raw -> Text(block.text, style = body.copy(fontFamily = FontFamily.Monospace))
     }
 }
 
@@ -974,14 +982,14 @@ private fun blockLabel(block: Block): String = when (block) {
     is Block.Raw -> "原样"
 }
 
-private fun headingSize(level: Int) = when (level) {
-    1 -> 28.sp
-    2 -> 24.sp
-    3 -> 21.sp
-    4 -> 18.sp
-    5 -> 16.sp
-    else -> 15.sp
-}
+@Composable
+private fun headingSize(level: Int): TextUnit = articleHeadingSize(level, LocalAppearance.current.article)
+
+@Composable
+private fun articleSp(base: Float): TextUnit = (base * LocalAppearance.current.article.scale).sp
+
+@Composable
+private fun uiSp(base: Float): TextUnit = (base * LocalAppearance.current.ui.scale).sp
 
 private fun decodePreview(bytes: ByteArray): ImageBitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
