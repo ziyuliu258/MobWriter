@@ -5,9 +5,29 @@ import dev.mobwriter.app.core.model.PostDocument
 object FrontMatterCodec {
     private val keyPattern = Regex("""^([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)$""")
     private val known = setOf(
-        "title", "date", "tags", "categories", "catagories", "series",
-        "aplayer", "top", "sticky", "abbrlink",
+        "title", "date", "author", "uuid", "tags", "categories", "catagories", "series", "series_index",
+        "aplayer", "top", "pinned", "sticky", "abbrlink",
     )
+
+    /** 「其他字段」编辑框里的原文，按顶层条目拆开。 */
+    fun extrasFromText(yaml: String): List<String> {
+        val lines = yaml.replace("\r\n", "\n").split('\n')
+        val extras = mutableListOf<String>()
+        var index = 0
+        while (index < lines.size) {
+            if (lines[index].isBlank()) {
+                index++
+                continue
+            }
+            val (raw, next) = rawBlock(lines, index)
+            if (raw.isNotBlank()) extras += raw
+            index = next
+        }
+        return extras
+    }
+
+    fun topKey(raw: String): String? =
+        keyPattern.matchEntire(raw.lineSequence().first())?.groupValues?.get(1)
 
     fun parse(markdown: String): Pair<PostDocument, String> {
         val text = markdown.removePrefix("\uFEFF").replace("\r\n", "\n")
@@ -37,14 +57,18 @@ object FrontMatterCodec {
         val lines = yaml.split('\n')
         var title = ""
         var date = ""
+        val authors = mutableListOf<String>()
+        var uuid = ""
         var tags = emptyList<String>()
         var categories = emptyList<String>()
         var categoryKey: String? = null
         var hadTags = false
         var hadCategories = false
         var series: String? = null
+        var seriesIndex: Int? = null
         var aplayer = false
         var top = false
+        var pinned = false
         var sticky: Int? = null
         var abbrlink: String? = null
         val extras = mutableListOf<String>()
@@ -86,10 +110,24 @@ object FrontMatterCodec {
                     date = read.first
                     i = read.second
                 }
+                "author" -> {
+                    val read = readList(value, lines, i + 1)
+                    authors.clear()
+                    authors += read.first
+                    i = read.second
+                }
+                "uuid" -> {
+                    uuid = unquote(value.trim())
+                    i++
+                }
                 "series" -> {
                     val read = readScalar(value, lines, i + 1)
                     series = read.first.ifBlank { null }
                     i = read.second
+                }
+                "series_index" -> {
+                    seriesIndex = value.trim().trim('\'', '"').toIntOrNull()
+                    i++
                 }
                 "abbrlink" -> {
                     val read = readScalar(value, lines, i + 1)
@@ -102,6 +140,10 @@ object FrontMatterCodec {
                 }
                 "top" -> {
                     top = truthy(value)
+                    i++
+                }
+                "pinned" -> {
+                    pinned = truthy(value)
                     i++
                 }
                 "sticky" -> {
@@ -127,14 +169,18 @@ object FrontMatterCodec {
         return PostDocument(
             title = title,
             date = date,
+            authors = authors.toList(),
+            uuid = uuid,
             tags = tags,
             categories = categories,
             categoryKey = categoryKey,
             hadTagsKey = hadTags,
             hadCategoriesKey = hadCategories,
             series = series,
+            seriesIndex = seriesIndex,
             aplayer = aplayer,
             top = top,
+            pinned = pinned,
             sticky = sticky,
             abbrlink = abbrlink,
             extras = extras,
@@ -186,8 +232,17 @@ object FrontMatterCodec {
 
     private fun writeYaml(document: PostDocument): String {
         val lines = mutableListOf<String>()
+        if (document.uuid.isNotBlank()) lines += "uuid: ${document.uuid}"
         lines += "title: ${quote(document.title)}"
         if (document.date.isNotBlank()) lines += "date: ${document.date}"
+        when (document.authors.size) {
+            0 -> Unit
+            1 -> lines += "author: ${quote(document.authors[0])}"
+            else -> {
+                lines += "author:"
+                document.authors.forEach { lines += "  - ${quote(it)}" }
+            }
+        }
         if (document.tags.isNotEmpty() || document.hadTagsKey) {
             lines += "tags:"
             document.tags.forEach { lines += "  - ${quote(it)}" }
@@ -197,11 +252,16 @@ object FrontMatterCodec {
             document.categories.forEach { lines += "  - ${quote(it)}" }
         }
         if (!document.series.isNullOrBlank()) lines += "series: ${quote(document.series)}"
+        if (document.seriesIndex != null) lines += "series_index: ${document.seriesIndex}"
         if (document.aplayer) lines += "aplayer: true"
         if (document.top) lines += "top: true"
+        if (document.pinned) lines += "pinned: true"
         if (document.sticky != null) lines += "sticky: ${document.sticky}"
         if (!document.abbrlink.isNullOrBlank()) lines += "abbrlink: ${document.abbrlink}"
-        document.extras.forEach { lines += it }
+        document.extras.forEach { raw ->
+            val key = topKey(raw)
+            if (key == null || key !in known) lines += raw
+        }
         return lines.joinToString("\n")
     }
 

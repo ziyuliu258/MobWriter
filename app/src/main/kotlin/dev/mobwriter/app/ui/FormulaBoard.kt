@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.ClickableText
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -268,7 +267,7 @@ fun FormulaImage(
                 )
             }
         } else if (latex.isNotBlank()) {
-            androidx.compose.material3.Text(
+            top.yukonga.miuix.kmp.basic.Text(
                 latex,
                 style = style.copy(fontFamily = FontFamily.Monospace, color = Moss),
             )
@@ -289,7 +288,7 @@ private fun OverflowFormula(
 ) {
     val density = LocalDensity.current
     val scroll = rememberScrollState()
-    val background = MaterialTheme.colorScheme.background
+    val background = Paper
     val moreOnRight = scroll.maxValue > 0 && scroll.value < scroll.maxValue
     val holdHorizontal = remember {
         object : NestedScrollConnection {
