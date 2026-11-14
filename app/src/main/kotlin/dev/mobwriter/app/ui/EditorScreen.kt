@@ -10,7 +10,6 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -516,7 +515,17 @@ private fun BlockCard(
                 block.alert?.let { alert -> Text(alertLabel(alert), color = Cinnabar, fontSize = articleSp(12f)) }
                 RichOrEdit(block.text, item.id, 0, viewModel, body, requester, Modifier.fillMaxWidth(), onLink, formulas)
             }
-            is Block.Math -> FormulaImage(block.latex, display = true, board = formulas, style = body, modifier = Modifier.fillMaxWidth())
+            is Block.Math -> if (focused) {
+                FormulaBox(block.latex, requester) { viewModel.onPlain(item.id, it) }
+            } else {
+                FormulaImage(
+                    block.latex,
+                    display = true,
+                    board = formulas,
+                    style = body,
+                    modifier = Modifier.fillMaxWidth().tapToEdit { viewModel.beginEditing(item.id, 0) },
+                )
+            }
             is Block.BulletList -> ListBlock(item.id, block.items, ordered = false, viewModel, body, requester)
             is Block.OrderedList -> ListBlock(item.id, block.items, ordered = true, viewModel, body, requester)
             is Block.Code -> PlainBox(
@@ -528,7 +537,6 @@ private fun BlockCard(
                 requester = requester,
                 onValue = { viewModel.onPlain(item.id, it) },
             )
-            is Block.Math -> FormulaBox(block.latex, requester) { viewModel.onPlain(item.id, it) }
             is Block.Image -> ImageCard(block, viewModel.path, blog) { viewModel.updateImageAlt(item.id, it) }
             is Block.Table -> TableCard(item.id, block, viewModel, body)
             is Block.Rule -> Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outline))
@@ -810,7 +818,7 @@ private fun RichOrEdit(
 ) {
     val focused = viewModel.activeId == id
     if (!focused && text.contains('$')) {
-        InlineRich(text, style, formulas, onLink, modifier.clickable { viewModel.focus(id, item, 0, 0) })
+        InlineRich(text, style, formulas, onLink, modifier.tapToEdit { viewModel.beginEditing(id, item) })
     } else {
         MarkupBlock(id, item, text, viewModel, style, requester, modifier)
     }
@@ -959,6 +967,11 @@ private fun StyledReadText(markdown: String, style: TextStyle) {
         }
     }
     SelectionContainer { Text(annotated, style = style) }
+}
+
+private fun EditorViewModel.beginEditing(id: Long, item: Int) {
+    focus(id, item, 0, 0)
+    focusToken++
 }
 
 private fun blockLabel(block: Block): String = when (block) {
