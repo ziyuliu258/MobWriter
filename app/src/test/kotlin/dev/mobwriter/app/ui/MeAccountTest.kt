@@ -40,7 +40,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], qualifiers = "w360dp-h640dp-xxhdpi")
+@Config(sdk = [35], qualifiers = "w360dp-h640dp-xxhdpi")
 class MeAccountTest {
     @get:Rule
     val rule = createComposeRule()
@@ -56,12 +56,12 @@ class MeAccountTest {
         rule.setContent {
             MobWriterTheme {
                 MeScreen(
-                    onOpenSettings = {},
+                    onOpenAccount = {},
                     author = "Example Author",
                     accountLabel = "alpha/blog",
                     avatar = bitmap,
                     onSwitchAccount = {},
-                ) { MobBottomBar(MainTab.Me) {} }
+                ) { MainNavigationBar(MainTab.Me) {} }
             }
         }
         rule.onNodeWithContentDescription("头像").assertIsDisplayed()
@@ -70,8 +70,8 @@ class MeAccountTest {
         rule.onNodeWithText("alpha/blog").assertIsDisplayed()
         rule.onNodeWithText("墨哺").assertDoesNotExist()
         rule.onNodeWithText("切换账号").assertIsDisplayed()
-        rule.onNodeWithText("设置").assertIsDisplayed()
-        rule.onNodeWithText("检查更新").assertDoesNotExist()
+        rule.onNodeWithText("账户信息").assertIsDisplayed()
+        rule.onNodeWithText("设置").assertDoesNotExist()
         rule.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)).assertCountEquals(2)
     }
 
@@ -79,7 +79,7 @@ class MeAccountTest {
     fun missingAvatarUsesAPlaceholder() {
         rule.setContent {
             MobWriterTheme {
-                MeScreen(onOpenSettings = {}, accountLabel = "未登录") { MobBottomBar(MainTab.Me) {} }
+                MeScreen(onOpenAccount = {}, accountLabel = "未登录") { MainNavigationBar(MainTab.Me) {} }
             }
         }
         rule.onNodeWithContentDescription("默认头像").assertIsDisplayed()
@@ -114,12 +114,12 @@ class MeAccountTest {
                     )
                     "settings" -> SetupScreen(initial = active, onSave = {}, onClose = { screen = "me" })
                     else -> MeScreen(
-                        onOpenSettings = { screen = "settings" },
+                        onOpenAccount = { screen = "settings" },
                         author = if (id == "a") "甲作者" else "乙作者",
                         accountLabel = "${active.owner}/${active.repo}",
                         avatar = if (id == "a") Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).asImageBitmap() else null,
                         onSwitchAccount = { screen = "switch" },
-                    ) { MobBottomBar(MainTab.Me) {} }
+                    ) { MainNavigationBar(MainTab.Me) {} }
                 }
             }
         }
@@ -133,10 +133,6 @@ class MeAccountTest {
         rule.onNodeWithText("乙作者").assertIsDisplayed()
         rule.onNodeWithText("甲作者").assertDoesNotExist()
         rule.onNodeWithText("beta/notes").assertIsDisplayed()
-        rule.onNodeWithText("设置").performClick()
-        rule.onNodeWithText("账户信息").assertIsDisplayed()
-        rule.onNodeWithText("beta/notes").assertIsDisplayed()
-        rule.onNodeWithText("检查更新").assertIsDisplayed()
         rule.onNodeWithText("token-beta-kept").assertDoesNotExist()
         rule.onNodeWithText("GitHub 令牌").assertDoesNotExist()
         rule.onNodeWithText("账户信息").performClick()
@@ -189,7 +185,6 @@ class MeAccountTest {
                 )
             }
         }
-        rule.onNodeWithText("账户信息").performClick()
         rule.onNodeWithText("检查更新").assertDoesNotExist()
         rule.onNodeWithText("token-alpha-kept").assertDoesNotExist()
         rule.onNodeWithText("显示令牌").assertDoesNotExist()
@@ -218,10 +213,11 @@ class MeAccountTest {
                         ),
                         drafts = DraftStore(context, id),
                         onOpen = {},
+                        onSearch = {},
                         onNew = {},
                         onOpenDraft = {},
                         onCatalog = { _, _ -> },
-                        bottomBar = { MobBottomBar(MainTab.Home) {} },
+                        bottomBar = { MainNavigationBar(MainTab.Home) {} },
                     )
                 }
             }

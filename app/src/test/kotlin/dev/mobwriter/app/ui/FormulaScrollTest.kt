@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.material3.Text
+import top.yukonga.miuix.kmp.basic.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
@@ -52,7 +52,7 @@ import org.robolectric.annotation.Config
 import kotlin.math.abs
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], qualifiers = "w360dp-h640dp-xxhdpi")
+@Config(sdk = [35], qualifiers = "w360dp-h640dp-xxhdpi")
 class FormulaScrollTest {
     @get:Rule
     val rule = createComposeRule()

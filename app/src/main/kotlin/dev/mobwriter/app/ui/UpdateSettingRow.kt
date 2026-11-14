@@ -1,5 +1,9 @@
 package dev.mobwriter.app.ui
 
+import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,11 +13,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.SystemUpdate
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -133,30 +132,18 @@ internal fun UpdateSettingRow() {
     }
 
     val checkForUpdate = LocalUpdateCheck.current
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(
-                Modifier.weight(1f).clickable(enabled = !busy, onClick = { checkForUpdate?.invoke() ?: check() }),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Outlined.SystemUpdate, contentDescription = null, tint = Muted, modifier = Modifier.size(22.dp))
-                Column(Modifier.padding(start = 14.dp).weight(1f)) {
-                    Text("检查更新", style = MaterialTheme.typography.titleLarge)
-                    if (status.isNotBlank()) Text(status, color = Muted)
-                }
-            }
-            if (busy) {
-                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = Cinnabar)
-            }
+    BasicComponent(
+        title = "检查更新",
+        summary = status.ifBlank { null },
+        enabled = !busy,
+        onClick = { checkForUpdate?.invoke() ?: check() },
+        endActions = {
+            if (busy) InfiniteProgressIndicator(color = Cinnabar)
             pageUrl?.let { link ->
-                AppIconButton("打开发布页", onClick = { openKnownPage(link) }) {
+                AppIconButton("打开发布页", onClick = { openKnownPage(link) }, tint = Muted) {
                     Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = "打开发布页")
                 }
             }
-        }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-    }
+        },
+    )
 }

@@ -113,12 +113,30 @@ sealed interface Block {
     data class Raw(val text: String) : Block
 }
 
+/** 搜索用的纯文本。公式和分隔线不参与匹配。 */
+fun Block.searchText(): String = when (this) {
+    is Block.Paragraph -> text
+    is Block.Heading -> text
+    is Block.Quote -> text
+    is Block.BulletList -> items.joinToString("\n")
+    is Block.OrderedList -> items.joinToString("\n")
+    is Block.Code -> code
+    is Block.Image -> alt
+    is Block.Table -> (header + rows.flatten()).joinToString(" ")
+    is Block.Raw -> text
+    is Block.Math, is Block.Rule -> ""
+}
+
 @Serializable
 data class PostDocument(
     val path: String? = null,
     val sha: String? = null,
     val title: String = "",
     val date: String = "",
+    /** 作者。一个人写成一行，多个人写成列表。 */
+    val authors: List<String> = emptyList(),
+    /** 文章稳定标识。Astro 新建时生成，已有的原样保留。 */
+    val uuid: String = "",
     val tags: List<String> = emptyList(),
     val categories: List<String> = emptyList(),
     val categoryKey: String? = null,
@@ -139,6 +157,7 @@ data class PostDocument(
     val slug: String = "",
 )
 
+@Serializable
 data class PostSummary(
     val path: String,
     val sha: String,
@@ -148,6 +167,8 @@ data class PostSummary(
     val categories: List<String>,
     val series: String? = null,
     val seriesIndex: Int? = null,
+    /** 去掉标记后的正文，只给搜索预览用。 */
+    val plain: String = "",
 )
 
 enum class BuildStatus { Started, Skipped, WorkflowMissing, Failed }

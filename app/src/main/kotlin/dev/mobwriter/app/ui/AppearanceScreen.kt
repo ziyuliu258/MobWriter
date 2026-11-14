@@ -16,24 +16,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,65 +43,69 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.mobwriter.app.core.model.Appearance
 import dev.mobwriter.app.core.model.BackgroundChoice
+import dev.mobwriter.app.core.model.FontFace
 import dev.mobwriter.app.core.model.FontScale
 import dev.mobwriter.app.core.model.Palette
 import dev.mobwriter.app.core.model.PaletteChoice
 import dev.mobwriter.app.data.BackgroundImageStore
 import kotlin.math.roundToInt
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.ColorPicker
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AppearanceScreen(
     appearance: Appearance,
     onChange: (Appearance) -> Unit,
     onClose: () -> Unit,
 ) {
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                modifier = Modifier,
-                title = { Text("外观") },
-                navigationIcon = {
-                    AppIconButton("返回", onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-            )
-        },
-    ) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            Spacer(Modifier.height(8.dp))
-            FontScaleControl(
-                title = "界面字体大小",
-                scale = appearance.ui,
-                sample = "界面上的文字会按这个大小显示。",
-                sampleStyle = MaterialTheme.typography.bodyLarge,
-                onSelect = { onChange(appearance.copy(ui = it)) },
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-            Spacer(Modifier.height(8.dp))
-            FontScaleControl(
-                title = "文章字体大小",
-                scale = appearance.article,
-                sample = "文章里的句子会按这个大小显示。",
-                sampleStyle = articleBodyStyle(appearance.article).copy(color = MaterialTheme.colorScheme.onBackground),
-                onSelect = { onChange(appearance.copy(article = it)) },
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-            PaletteControl(appearance.palette) { onChange(appearance.copy(palette = it)) }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-            BackgroundControl(appearance.background) { onChange(appearance.copy(background = it)) }
-            Spacer(Modifier.height(24.dp))
+    InkPage(title = "外观", onBack = onClose) {
+        // 整页放进一个条目：内容不长，测试和无障碍滚动都能找到每一组。
+        item {
+            Column {
+                InkGroup("字体") {
+                    FontFaceControl("界面字体", appearance.uiFont) { onChange(appearance.copy(uiFont = it)) }
+                    FontFaceControl("文章字体", appearance.articleFont) { onChange(appearance.copy(articleFont = it)) }
+                }
+                InkGroup("字号") {
+                    FontScaleControl(
+                        title = "界面字体大小",
+                        scale = appearance.ui,
+                        sample = "界面上的文字会按这个大小显示。",
+                        sampleStyle = MiuixTheme.textStyles.body1.copy(color = Ink),
+                        onSelect = { onChange(appearance.copy(ui = it)) },
+                    )
+                    FontScaleControl(
+                        title = "文章字体大小",
+                        scale = appearance.article,
+                        sample = "文章里的句子会按这个大小显示。",
+                        sampleStyle = articleBodyStyle(appearance.article, appearance.articleFont).copy(color = Ink),
+                        onSelect = { onChange(appearance.copy(article = it)) },
+                    )
+                }
+                InkGroup("配色") {
+                    PaletteControl(appearance.palette) { onChange(appearance.copy(palette = it)) }
+                }
+                InkGroup("背景") {
+                    BackgroundControl(appearance.background) { onChange(appearance.copy(background = it)) }
+                }
+            }
         }
     }
+}
+
+/** 一副字的二选一：宋体（衬线）或黑体（无衬线），立即生效。 */
+@Composable
+private fun FontFaceControl(title: String, face: FontFace, onSelect: (FontFace) -> Unit) {
+    Text(title, style = MiuixTheme.textStyles.headline1, color = Ink)
+    InkSegment(
+        options = FontFace.entries.map { it.label },
+        selected = FontFace.entries.indexOf(face),
+        onSelect = { onSelect(FontFace.entries[it]) },
+    )
 }
 
 @Composable
@@ -126,65 +116,57 @@ private fun FontScaleControl(
     sampleStyle: TextStyle,
     onSelect: (FontScale) -> Unit,
 ) {
-    Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
-    Text(scale.label, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyLarge)
-    Slider(
+    Text(title, style = MiuixTheme.textStyles.headline1, color = Ink, modifier = Modifier.padding(top = 4.dp, bottom = 2.dp))
+    Text(scale.label, color = Cinnabar, style = MiuixTheme.textStyles.footnote1)
+    InkSlider(
         value = scale.percent.toFloat(),
         onValueChange = { onSelect(FontScale.of(it.roundToInt())) },
         valueRange = FontScale.MIN.toFloat()..FontScale.MAX.toFloat(),
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { contentDescription = "$title ${scale.label}" },
+        description = "$title ${scale.label}",
     )
-    Text(sample, style = sampleStyle, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
+    Text(sample, style = sampleStyle, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
 }
 
 @Composable
 private fun PaletteControl(selected: PaletteChoice, onSelect: (PaletteChoice) -> Unit) {
     var customOpen by remember { mutableStateOf(false) }
-    Text("配色", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
     Text(
-        "当前 ${selected.label}",
-        color = MaterialTheme.colorScheme.primary,
+        "当前 ${selected.label}" + (selected.customAccent?.let { "  #%06X".format(it) } ?: ""),
+        color = Cinnabar,
+        style = MiuixTheme.textStyles.footnote1,
         modifier = Modifier.padding(bottom = 8.dp),
     )
-    Palette.entries.chunked(4).forEach { row ->
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            row.forEach { palette ->
-                val choice = PaletteChoice.preset(palette)
-                PaletteSwatch(
-                    color = opaque(palette.accent),
-                    label = palette.label,
-                    chosen = selected.key == choice.key,
-                    modifier = Modifier.weight(1f),
-                ) { onSelect(choice) }
-            }
-            repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+    // 预设和「自定义」排在同一张四列网格里，每格等宽，行与行对齐
+    val custom = selected.customAccent
+    val cells: List<Pair<String, @Composable (Modifier) -> Unit>> = Palette.entries.map { palette ->
+        val choice = PaletteChoice.preset(palette)
+        palette.key to @Composable { modifier: Modifier ->
+            PaletteSwatch(
+                color = opaque(palette.accent),
+                label = palette.label,
+                chosen = selected.key == choice.key,
+                modifier = modifier,
+            ) { onSelect(choice) }
         }
-    }
-    Row(
-        Modifier.fillMaxWidth().padding(top = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val custom = selected.customAccent
+    } + ("custom" to @Composable { modifier: Modifier ->
         PaletteSwatch(
             color = opaque(custom ?: 0x888888),
             label = "自定义",
             chosen = custom != null,
-            modifier = Modifier.weight(1f),
+            modifier = modifier,
         ) { customOpen = true }
-        if (custom != null) {
-            Text(
-                "#%06X".format(custom),
-                color = Muted,
-                modifier = Modifier.padding(start = 12.dp),
-            )
+    })
+    cells.chunked(4).forEach { row ->
+        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            row.forEach { (_, cell) -> cell(Modifier.weight(1f)) }
+            repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
         }
     }
     Text(
         "按钮、选中项、页面底色都会换成这个颜色。",
         color = Muted,
-        modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
+        style = MiuixTheme.textStyles.footnote1,
+        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
     )
     if (customOpen) {
         CustomColorDialog(
@@ -224,13 +206,13 @@ private fun PaletteSwatch(
                 .background(color)
                 .border(
                     width = if (chosen) 2.dp else 0.dp,
-                    color = if (chosen) MaterialTheme.colorScheme.onBackground else Color.Transparent,
+                    color = if (chosen) Ink else Color.Transparent,
                     shape = CircleShape,
                 ),
         )
         Text(
             label,
-            color = if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            color = if (chosen) Cinnabar else Ink,
             fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
             textAlign = TextAlign.Center,
             maxLines = 1,
@@ -241,41 +223,15 @@ private fun PaletteSwatch(
 
 @Composable
 private fun CustomColorDialog(initial: Int, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
-    var red by remember { mutableStateOf((initial shr 16) and 0xFF) }
-    var green by remember { mutableStateOf((initial shr 8) and 0xFF) }
-    var blue by remember { mutableStateOf(initial and 0xFF) }
-    val mixed = (red shl 16) or (green shl 8) or blue
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = { onPick(mixed) }) { Text("使用") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-        title = { Text("自定义主色") },
-        text = {
-            Column {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(36.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(opaque(mixed)),
-                )
-                ColorChannel("红", red) { red = it }
-                ColorChannel("绿", green) { green = it }
-                ColorChannel("蓝", blue) { blue = it }
-            }
-        },
-    )
-}
-
-@Composable
-private fun ColorChannel(name: String, value: Int, onChange: (Int) -> Unit) {
-    Text("$name $value", modifier = Modifier.padding(top = 8.dp))
-    Slider(
-        value = value.toFloat(),
-        onValueChange = { onChange(it.roundToInt()) },
-        valueRange = 0f..255f,
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "自定义主色 $name" },
-    )
+    var color by remember { mutableStateOf(opaque(initial)) }
+    InkSheet(
+        onDismiss = onDismiss,
+        title = "自定义主色",
+        primary = "使用",
+        onPrimary = { onPick(color.toArgb() and 0xFFFFFF) },
+    ) {
+        ColorPicker(color = color, onColorChanged = { color = it.copy(alpha = 1f) })
+    }
 }
 
 @Composable
@@ -293,7 +249,6 @@ private fun BackgroundControl(selected: BackgroundChoice, onSelect: (BackgroundC
             onSelect(imported)
         }
     }
-    Text("背景", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp, bottom = 8.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         BackgroundOption(
             label = "默认",
@@ -305,7 +260,7 @@ private fun BackgroundControl(selected: BackgroundChoice, onSelect: (BackgroundC
                 onSelect(BackgroundChoice.plain())
             },
         ) {
-            Box(Modifier.fillMaxSize().background(Color(0xFFF7F3EA)))
+            Box(Modifier.fillMaxSize().background(Paper))
         }
         BackgroundOption(
             label = "自定义图片",
@@ -332,8 +287,9 @@ private fun BackgroundControl(selected: BackgroundChoice, onSelect: (BackgroundC
     }
     Text(
         if (failed) "这张图读不出来，换一张试试。" else "默认是现在的纸色。自定义图片只存在这台手机上，淡淡铺在页面底下。",
-        color = if (failed) MaterialTheme.colorScheme.primary else Muted,
-        modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
+        color = if (failed) Cinnabar else Muted,
+        style = MiuixTheme.textStyles.footnote1,
+        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
     )
 }
 
@@ -363,13 +319,13 @@ private fun BackgroundOption(
                 .clip(RoundedCornerShape(8.dp))
                 .border(
                     width = if (chosen) 2.dp else 1.dp,
-                    color = if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                    color = if (chosen) Cinnabar else MiuixTheme.colorScheme.dividerLine,
                     shape = RoundedCornerShape(8.dp),
                 ),
         ) { preview() }
         Text(
             label,
-            color = if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            color = if (chosen) Cinnabar else Ink,
             fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
             modifier = Modifier.padding(top = 4.dp),
         )

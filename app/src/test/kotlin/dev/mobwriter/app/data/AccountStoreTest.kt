@@ -18,7 +18,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28])
+@Config(sdk = [35])
 class AccountStoreTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
 

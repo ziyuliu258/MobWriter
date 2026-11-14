@@ -23,7 +23,7 @@
 ## 环境
 
 - 手机系统为 Android 15（API 35）或更高版本。
-- 从源码构建需要 JDK 17 或更高版本，以及 Android SDK 35。
+- 从源码构建需要 JDK 21 或更高版本，以及 Android SDK 37（platforms;android-37）和 build-tools 36。
 
 ## 构建与首次配置
 
