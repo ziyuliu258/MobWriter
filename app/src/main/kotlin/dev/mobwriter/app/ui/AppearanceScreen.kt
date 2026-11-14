@@ -119,7 +119,7 @@ private fun FontStepControl(
             ) {
                 Text(
                     step.label,
-                    color = if (chosen) Cinnabar else Ink,
+                    color = if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
