@@ -1,6 +1,6 @@
 # Repository rules
 
-MobWriter is a general-purpose Hexo writing app. Keep its source and documentation independent of any individual user's infrastructure.
+MobWriter writes Hexo and Astro blogs. Keep its source and documentation independent of any individual user's infrastructure.
 
 - Never hardcode personal IP addresses, domains, email addresses, account names, repository names, home-directory paths, credentials, or private article content.
 - Personal development values belong only in ignored `config/*.local.*` files. Commit empty `*.example.*` templates instead.

@@ -13,6 +13,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
 import java.net.URLEncoder
 import java.util.Base64
 import java.util.concurrent.TimeUnit
@@ -61,6 +62,44 @@ class OkHttpTransport : HttpTransport {
                     ?: return HttpResponse(response.code, response.body?.bytes() ?: byteArrayOf())
                 hops++
                 call = call.newBuilder().url(location).build()
+            }
+        }
+    }
+
+    /** 边下边写，供更新进度使用。重定向规则与 [execute] 相同。 */
+    fun download(url: String, headers: Map<String, String>, destination: File, maxBytes: Long, onProgress: (Float) -> Unit) {
+        var call = Request.Builder().url(url).apply {
+            headers.forEach { (name, value) -> header(name, value) }
+        }.build()
+        var hops = 0
+        while (true) {
+            client.newCall(call).execute().use { response ->
+                if (response.isRedirect && hops < 5) {
+                    val location = response.header("Location") ?: error("下载被重定向但没有地址")
+                    hops++
+                    call = call.newBuilder().url(location).build()
+                    return@use
+                }
+                if (response.code !in 200..299) error("下载失败（${response.code}）")
+                val body = response.body ?: error("下载内容为空")
+                val total = body.contentLength()
+                destination.parentFile?.mkdirs()
+                body.byteStream().use { input ->
+                    destination.outputStream().use { output ->
+                        val buffer = ByteArray(32 * 1024)
+                        var downloaded = 0L
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            downloaded += count
+                            if (downloaded > maxBytes) error("安装包太大")
+                            output.write(buffer, 0, count)
+                            if (total > 0) onProgress((downloaded.toFloat() / total).coerceIn(0f, 1f))
+                        }
+                    }
+                }
+                onProgress(1f)
+                return
             }
         }
     }

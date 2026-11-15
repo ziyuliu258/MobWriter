@@ -3,6 +3,8 @@ package dev.mobwriter.app.core.update
 import dev.mobwriter.app.core.github.HttpRequest
 import dev.mobwriter.app.core.github.HttpResponse
 import dev.mobwriter.app.core.github.HttpTransport
+import dev.mobwriter.app.core.github.OkHttpTransport
+import java.io.File
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -22,6 +24,7 @@ data class PublishedRelease(
     val versionName: String,
     val htmlUrl: String,
     val assets: List<ReleaseAsset>,
+    val notes: String = "",
 )
 
 data class UpdateManifest(
@@ -40,6 +43,7 @@ sealed interface UpdateChoice {
         val versionCode: Int,
         val downloadUrl: String,
         override val pageUrl: String,
+        val notes: String = "",
     ) : UpdateChoice
 
     data class OpenPage(override val pageUrl: String) : UpdateChoice
@@ -130,7 +134,7 @@ object AppUpdate {
             if (manifestCode <= currentVersionCode) return UpdateChoice.UpToDate(page)
             val name = manifest.versionName.ifBlank { release.versionName }
             return if (download != null) {
-                UpdateChoice.Install(name, manifestCode, download, page)
+                UpdateChoice.Install(name, manifestCode, download, page, release.notes)
             } else {
                 UpdateChoice.OpenPage(page)
             }
@@ -139,7 +143,7 @@ object AppUpdate {
         if (compared == null) return UpdateChoice.OpenPage(page)
         if (compared >= 0) return UpdateChoice.UpToDate(page)
         return if (download != null) {
-            UpdateChoice.Install(release.versionName, 0, download, page)
+            UpdateChoice.Install(release.versionName, 0, download, page, release.notes)
         } else {
             UpdateChoice.OpenPage(page)
         }
@@ -186,6 +190,7 @@ object AppUpdate {
             versionName = tag.removePrefix("v").ifBlank { tag },
             htmlUrl = html,
             assets = files,
+            notes = obj.text("body"),
         )
     }
 
@@ -237,6 +242,34 @@ class ReleaseLookup(private val transport: HttpTransport) {
         return runCatching { AppUpdate.parseManifest(response.text()) }.getOrNull()
     }
 
+    fun downloadTo(url: String, destination: File, onProgress: (Float) -> Unit = {}) {
+        if (!AppUpdate.isAllowedArtifactUrl(url)) throw UpdateException("无法下载安装包")
+        val streaming = transport as? OkHttpTransport
+        if (streaming != null) {
+            destination.parentFile?.mkdirs()
+            val partial = File(destination.parentFile, "${destination.name}.part")
+            if (partial.exists()) partial.delete()
+            try {
+                streaming.download(url, downloadHeaders(), partial, AppUpdate.MaxApkBytes.toLong(), onProgress)
+            } catch (error: Exception) {
+                partial.delete()
+                if (error is UpdateException) throw error
+                throw UpdateException(error.message ?: "无法下载安装包")
+            }
+            if (!AppUpdate.looksLikeApk(partial.inputStream().use { stream ->
+                    ByteArray(8).also { stream.read(it) }
+                })) {
+                partial.delete()
+                throw UpdateException("下载内容不是安装包")
+            }
+            if (destination.exists()) destination.delete()
+            if (!partial.renameTo(destination)) throw UpdateException("无法保存安装包")
+            return
+        }
+        destination.writeBytes(download(url))
+        onProgress(1f)
+    }
+
     fun download(url: String, maxBytes: Int = AppUpdate.MaxApkBytes): ByteArray {
         if (!AppUpdate.isAllowedArtifactUrl(url)) throw UpdateException("无法下载安装包")
         val response = get(url, "*/*")
@@ -244,6 +277,11 @@ class ReleaseLookup(private val transport: HttpTransport) {
         if (response.bytes.size > maxBytes) throw UpdateException("安装包太大")
         return response.bytes
     }
+
+    private fun downloadHeaders(): Map<String, String> = mapOf(
+        "Accept" to "*/*",
+        "User-Agent" to "MobWriter",
+    )
 
     private fun get(url: String, accept: String): HttpResponse =
         transport.execute(

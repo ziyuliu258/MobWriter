@@ -1,14 +1,7 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
-}
-
-kotlin {
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-    }
 }
 
 fun mobwriterValue(property: String, env: String): String {
@@ -45,11 +38,11 @@ val hasReleaseKey = listOf(releaseStoreFile, releaseStorePassword, releaseKeyAli
 
 android {
     namespace = "dev.mobwriter.app"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "dev.mobwriter.app"
-        minSdk = 26
+        minSdk = 35
         targetSdk = 35
         versionCode = publishedVersionCode ?: 1
         versionName = publishedVersionName ?: "1.0.0"
@@ -64,22 +57,32 @@ android {
                 storePassword = releaseStorePassword
                 keyAlias = releaseKeyAlias
                 keyPassword = releaseKeyPassword
+                enableV3Signing = true
             }
         }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             if (hasReleaseKey) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
     }
 
+    androidResources {
+        localeFilters += "zh"
+    }
+
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
 
     buildFeatures {
@@ -95,22 +98,37 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        // 安装包从 GitHub Release 整包下载。API 35 起 AGP 默认不压缩 dex，方便 ART mmap，
+        // 但整包下载会大一截。dex 压进 APK，安装时再解开。
+        // 原生库保持不压缩、按 16 KB 页对齐，Android 15 才能直接加载。
+        dex { useLegacyPackaging = true }
+        jniLibs { useLegacyPackaging = false }
+    }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.packaging.jniLibs.excludes.addAll("lib/x86/**", "lib/x86_64/**")
     }
 }
 
 dependencies {
     implementation(project(":core"))
-    val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
+    val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
-    implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
-    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.4")
+    implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.4")
+    // 顶栏渐进模糊、底栏毛玻璃的采样（Apache-2.0）
+    implementation("io.github.kyant0:backdrop:2.0.1")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.security:security-crypto:1.0.0")

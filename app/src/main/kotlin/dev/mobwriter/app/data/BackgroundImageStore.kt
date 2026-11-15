@@ -29,9 +29,9 @@ internal class BackgroundImageStore(private val context: Context) {
         val bitmap = context.contentResolver.openInputStream(uri)?.use {
             BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
         } ?: return null
-        val name = "background-${System.currentTimeMillis()}.jpg"
+        val name = "background-${System.currentTimeMillis()}.webp"
         val target = File(directory, name)
-        target.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+        target.outputStream().use { bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 80, it) }
         bitmap.recycle()
         directory.listFiles()?.filter { it.name != name }?.forEach { it.delete() }
         return BackgroundChoice.image(name)

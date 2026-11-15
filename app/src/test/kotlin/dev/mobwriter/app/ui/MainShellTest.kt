@@ -1,5 +1,9 @@
 package dev.mobwriter.app.ui
 
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasScrollAction
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,7 +36,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], qualifiers = "w360dp-h640dp-xxhdpi")
+@Config(sdk = [35], qualifiers = "w360dp-h640dp-xxhdpi")
 class MainShellTest {
     @get:Rule
     val rule = createComposeRule()
@@ -43,36 +47,50 @@ class MainShellTest {
         rule.setContent {
             val current by tab
             MobWriterTheme {
-                MobBottomBar(current) { tab.value = it }
+                MainNavigationBar(current) { tab.value = it }
             }
         }
-        rule.onNodeWithText("主页").assertIsDisplayed()
-        rule.onNodeWithText("我的").assertIsDisplayed()
-        rule.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)).assertCountEquals(2)
-        rule.onNodeWithText("我的").performClick()
+        // 悬浮胶囊的文字标签带展开动画，按 Tab 角色找两项更可靠
+        val tabs = rule.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab))
+        tabs.assertCountEquals(2)
+        tabs[1].performClick()
         rule.runOnIdle { assertEquals(MainTab.Me, tab.value) }
-        rule.onNodeWithText("主页").performClick()
+        tabs[0].performClick()
         rule.runOnIdle { assertEquals(MainTab.Home, tab.value) }
     }
 
     @Test
-    fun profileOpensSettings() {
-        var opened = false
+    fun profileHoldsTheSettingsInPlace() {
+        var account = false
+        var look = false
         rule.setContent {
             MobWriterTheme {
-                MeScreen(onOpenSettings = { opened = true }) {
-                    MobBottomBar(MainTab.Me) {}
+                MeScreen(onOpenAccount = { account = true }, onOpenAppearance = { look = true }) {
+                    MainNavigationBar(MainTab.Me) {}
                 }
             }
         }
-        rule.onNodeWithText("设置").performClick()
-        rule.runOnIdle { assertTrue(opened) }
-        rule.onNodeWithText("主页").assertIsDisplayed()
-        rule.onAllNodesWithText("我的").assertCountEquals(2)
+        // 设置项直接铺在「我的」里，没有单独的「设置」入口
+        rule.onNodeWithText("设置").assertDoesNotExist()
+        rule.onNodeWithText("切换账号").assertIsDisplayed()
+        rule.onNodeWithText("外观").assertIsDisplayed()
+        rule.onNodeWithText("界面 标准 · 文章 标准 · 墨哺").assertIsDisplayed()
+        val accountTop = rule.onNodeWithText("账户信息").fetchSemanticsNode().boundsInRoot.top
+        val appearanceTop = rule.onNodeWithText("外观").fetchSemanticsNode().boundsInRoot.top
+        assertTrue(accountTop < appearanceTop)
+        rule.onNodeWithText("账户信息").performClick()
+        rule.onNodeWithText("外观").performClick()
+        rule.runOnIdle {
+            assertTrue(account)
+            assertTrue(look)
+        }
+        rule.onNode(hasScrollAction()).performScrollToNode(hasText("检查更新"))
+        rule.onNodeWithText("检查更新").assertIsDisplayed()
+        rule.onNodeWithText("GitHub 令牌").assertDoesNotExist()
     }
 
     @Test
-    fun settingsListsAccountAndUpdateAsPeerRows() {
+    fun accountFormShowsEveryRepositoryField() {
         rule.setContent {
             MobWriterTheme {
                 SetupScreen(
@@ -82,25 +100,7 @@ class MainShellTest {
                 )
             }
         }
-        rule.onNodeWithText("设置").assertIsDisplayed()
-        rule.onNodeWithText("账户信息").assertIsDisplayed()
-        rule.onNodeWithText("外观").assertIsDisplayed()
-        rule.onNodeWithText("界面 标准 · 文章 标准 · 墨哺").assertIsDisplayed()
-        rule.onNodeWithText("检查更新").assertIsDisplayed()
-        val accountTop = rule.onNodeWithText("账户信息").fetchSemanticsNode().boundsInRoot.top
-        val appearanceTop = rule.onNodeWithText("外观").fetchSemanticsNode().boundsInRoot.top
-        val updateTop = rule.onNodeWithText("检查更新").fetchSemanticsNode().boundsInRoot.top
-        assertTrue(accountTop < appearanceTop && appearanceTop < updateTop)
-        rule.onNodeWithText("example-owner/example-app").assertIsDisplayed()
-        rule.onNodeWithText("GitHub 令牌").assertDoesNotExist()
-        rule.onNodeWithText("仓库所有者").assertDoesNotExist()
-        rule.onNodeWithText("仓库名").assertDoesNotExist()
-        rule.onNodeWithText("分支").assertDoesNotExist()
-        rule.onNodeWithText("文章目录").assertDoesNotExist()
-        rule.onNodeWithText("图片放在哪").assertDoesNotExist()
-        rule.onNodeWithText("发布后触发自动构建").assertDoesNotExist()
-        rule.onNodeWithText("工作流文件名").assertDoesNotExist()
-        rule.onNodeWithText("账户信息").performClick()
+        rule.onAllNodesWithText("账户信息").onFirst().assertIsDisplayed()
         rule.onNodeWithText("检查更新").assertDoesNotExist()
         rule.onNodeWithText("外观").assertDoesNotExist()
         rule.onNodeWithText("GitHub 令牌").assertIsDisplayed()
@@ -108,19 +108,13 @@ class MainShellTest {
         rule.onNodeWithText("仓库名").assertIsDisplayed()
         rule.onNodeWithText("分支").assertIsDisplayed()
         rule.onNodeWithText("文章目录").assertIsDisplayed()
-        rule.onNodeWithText("图片放在哪").assertIsDisplayed()
-        rule.onNodeWithText("跟文章放在一起").assertIsDisplayed()
-        rule.onNodeWithText("放进 source/images").assertIsDisplayed()
         rule.onNodeWithText("example-owner").assertIsDisplayed()
         rule.onNodeWithText("example-app").assertIsDisplayed()
+        rule.onNodeWithText("图片放在哪").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("跟文章放在一起").assertIsDisplayed()
+        rule.onNodeWithText("站点图片目录").assertIsDisplayed()
         rule.onNodeWithText("发布后触发自动构建").performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("工作流文件名").performScrollTo().assertIsDisplayed()
-        rule.onNodeWithContentDescription("返回").performClick()
-        rule.onNodeWithText("设置").assertIsDisplayed()
-        rule.onNodeWithText("账户信息").assertIsDisplayed()
-        rule.onNodeWithText("外观").assertIsDisplayed()
-        rule.onNodeWithText("检查更新").assertIsDisplayed()
-        rule.onNodeWithText("GitHub 令牌").assertDoesNotExist()
     }
 
     @Test
@@ -132,21 +126,19 @@ class MainShellTest {
                     onSave = {},
                     onClose = {},
                     title = "添加账号",
-                    showUpdate = false,
                 )
             }
         }
-        rule.onNodeWithText("添加账号").assertIsDisplayed()
+        rule.onAllNodesWithText("添加账号").onFirst().assertIsDisplayed()
         rule.onNodeWithText("GitHub 令牌").assertIsDisplayed()
         rule.onNodeWithText("仓库所有者").assertIsDisplayed()
         rule.onNodeWithText("仓库名").assertIsDisplayed()
         rule.onNodeWithText("分支").assertIsDisplayed()
         rule.onNodeWithText("文章目录").assertIsDisplayed()
-        rule.onNodeWithText("图片放在哪").assertIsDisplayed()
+        rule.onNodeWithText("图片放在哪").performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("发布后触发自动构建").performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("工作流文件名").performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("检查更新").assertDoesNotExist()
-        rule.onNodeWithText("账户信息").assertDoesNotExist()
         rule.onNodeWithText("外观").assertDoesNotExist()
     }
 
@@ -166,20 +158,20 @@ class MainShellTest {
                     ),
                     drafts = drafts,
                     onOpen = {},
+                    onSearch = {},
                     onNew = { writing = true },
                     onOpenDraft = { openedDraft = true },
                     onCatalog = { _, _ -> },
-                    bottomBar = { MobBottomBar(MainTab.Home) {} },
+                    bottomBar = { MainNavigationBar(MainTab.Home) {} },
                 )
             }
         }
         rule.waitUntil(timeoutMillis = 5_000) {
-            rule.onAllNodes(androidx.compose.ui.test.hasText("还没有文章")).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(androidx.compose.ui.test.hasText("未完成的草稿")).fetchSemanticsNodes().isNotEmpty()
         }
         rule.onNodeWithText("手机上的草稿").assertIsDisplayed()
         rule.onNodeWithText("未完成的草稿").performClick()
         rule.runOnIdle { assertTrue(openedDraft) }
-        rule.onNodeWithText("仓库里的文章").assertIsDisplayed()
         rule.onAllNodesWithText("设置").assertCountEquals(0)
         rule.onNodeWithContentDescription("写文章").performClick()
         rule.runOnIdle { assertTrue(writing) }
