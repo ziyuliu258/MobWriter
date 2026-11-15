@@ -17,7 +17,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.test.core.app.ApplicationProvider
 import dev.mobwriter.app.core.model.Appearance
 import dev.mobwriter.app.core.model.ArticleType
@@ -54,9 +54,10 @@ class AppearanceSettingsTest {
         // Miuix 默认 17sp 的正文收小一档；标题和成段文字是衬线，界面标签不是。
         assertEquals(17f * 0.9f, standard.main.fontSize.value, 0.01f)
         assertEquals(20f * 0.9f, standard.title3.fontSize.value, 0.01f)
-        assertEquals(FontFamily.Serif, large.title3.fontFamily)
-        assertEquals(FontFamily.Serif, large.paragraph.fontFamily)
-        assertEquals(false, large.main.fontFamily == FontFamily.Serif)
+        assertEquals(BookSerif, large.title3.fontFamily)
+        assertEquals(BookSerif, large.paragraph.fontFamily)
+        assertEquals(FontWeight.Normal, large.title3.fontWeight)
+        assertEquals(false, large.main.fontFamily == BookSerif)
         assertEquals(standard.main.fontSize.value * 1.15f, large.main.fontSize.value, 0.01f)
         assertEquals(standard.footnote1.fontSize.value * 1.15f, large.footnote1.fontSize.value, 0.01f)
         assertEquals(standard.title1.fontSize.value * 1.15f, large.title1.fontSize.value, 0.01f)

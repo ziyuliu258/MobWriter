@@ -82,6 +82,8 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Superscript
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
@@ -266,18 +268,10 @@ fun EditorScreen(
             }
         },
     ) { padding ->
-        LaunchedEffect(viewModel.activeId, viewModel.mode, viewModel.switching) {
-            if (viewModel.mode != WriteMode.Typewriter || viewModel.switching) return@LaunchedEffect
-            val index = viewModel.blocks.indexOfFirst { it.id == viewModel.activeId }
-            if (index < 0) return@LaunchedEffect
-            val header = if (viewModel.mode != WriteMode.Reading) 2 else 0
-            val viewport = listState.layoutInfo.viewportSize.height
-            listState.animateScrollToItem((header + index).coerceAtLeast(0), scrollOffset = -(viewport / 3))
-        }
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp),
-            contentPadding = PaddingValues(vertical = 8.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 24.dp),
+            contentPadding = PaddingValues(top = 12.dp, bottom = 28.dp),
         ) {
             if (viewModel.mode != WriteMode.Reading) {
                 item {
@@ -297,14 +291,8 @@ fun EditorScreen(
                     MetaSummary(viewModel) { metaOpen = true }
                 }
             }
-            item { Spacer(Modifier.height(12.dp)) }
-            if (viewModel.switching) {
-                item {
-                    Box(Modifier.fillMaxWidth().height(280.dp), contentAlignment = Alignment.Center) {
-                        InfiniteProgressIndicator(color = Cinnabar)
-                    }
-                }
-            } else when (viewModel.mode) {
+            item { Spacer(Modifier.height(28.dp)) }
+            when (viewModel.mode) {
                 WriteMode.Source -> item { SourceEditor(viewModel, body) }
                 WriteMode.Reading -> {
                     item {
@@ -314,7 +302,7 @@ fun EditorScreen(
                     }
                     items(viewModel.blocks, key = { "read-${it.id}" }) { item ->
                         ReadOnlyBlock(item.block, body, formulas, blog, viewModel.path) { visitUrl = it }
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(20.dp))
                     }
                 }
                 else -> items(viewModel.blocks, key = { it.id }) { item ->
@@ -322,14 +310,19 @@ fun EditorScreen(
                     val dim = viewModel.mode == WriteMode.Typewriter &&
                         viewModel.activeId != null &&
                         viewModel.activeId != item.id
-                    Box(Modifier.graphicsLayer { alpha = if (dim) 0.38f else 1f }.padding(bottom = if (viewModel.mode == WriteMode.Typewriter) 14.dp else 8.dp)) {
+                    val dimAlpha by animateFloatAsState(
+                        targetValue = if (dim) 0.62f else 1f,
+                        animationSpec = tween(durationMillis = 320),
+                        label = "typewriter",
+                    )
+                    Box(Modifier.graphicsLayer { alpha = dimAlpha }.padding(bottom = 20.dp)) {
                         BlockCard(
                             item = item,
                             viewModel = viewModel,
                             blog = blog,
                             body = body,
                             requester = requester,
-                            showChrome = viewModel.mode == WriteMode.Typewriter,
+                            showChrome = viewModel.mode == WriteMode.Typewriter && viewModel.activeId == item.id,
                                 onLink = { visitUrl = it },
                                 formulas = formulas,
                         )
@@ -437,7 +430,7 @@ private fun MetaSummary(viewModel: EditorViewModel, onOpen: () -> Unit) {
         viewModel.series.trim().takeIf { it.isNotEmpty() }?.let { add(it) }
     }
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 6.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(top = 8.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -447,14 +440,16 @@ private fun MetaSummary(viewModel: EditorViewModel, onOpen: () -> Unit) {
                     Text("  ·  有未发布的修改", color = Cinnabar, style = MiuixTheme.textStyles.footnote1)
                 }
             }
-            Text(
-                parts.joinToString("  ·  ").ifEmpty { "添加作者、分类和标签" },
-                color = if (parts.isEmpty()) MiuixTheme.colorScheme.onSurfaceVariantActions else Muted,
-                style = MiuixTheme.textStyles.footnote1,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp),
-            )
+            if (parts.isNotEmpty()) {
+                Text(
+                    parts.joinToString("  ·  "),
+                    color = Muted,
+                    style = MiuixTheme.textStyles.footnote1,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
         }
     }
 }
@@ -672,7 +667,7 @@ private fun BlockCard(
                 item.id,
                 0,
                 viewModel,
-                body.copy(fontSize = headingSize(block.level), fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold),
+                body.copy(fontSize = headingSize(block.level), fontWeight = FontWeight.Normal),
                 requester,
                 Modifier.fillMaxWidth(),
                 onLink,
@@ -829,7 +824,7 @@ private fun PlainBox(
             value = field,
             onValueChange = { field = it; onValue(it.text) },
             textStyle = TextStyle(
-                fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Serif,
+                fontFamily = if (monospace) FontFamily.Monospace else LocalAppearance.current.articleFont.family,
                 fontSize = articleSp(15f),
                 lineHeight = articleSp(22f),
                 color = Ink,
@@ -934,7 +929,7 @@ private fun FormatBar(
             .background(Paper)
             .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 4.dp, vertical = 2.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ToolIcon("粗体", inlineEnabled, onBold) { Icon(Icons.Outlined.FormatBold, null) }
@@ -1010,7 +1005,7 @@ private fun ReadOnlyBlock(
         is Block.Paragraph -> InlineRich(block.text, style, formulas, onLink, Modifier.fillMaxWidth())
         is Block.Heading -> InlineRich(
             block.text,
-            style.copy(fontSize = headingSize(block.level), fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold),
+            style.copy(fontSize = headingSize(block.level), fontWeight = FontWeight.Normal),
             formulas,
             onLink,
             Modifier.fillMaxWidth(),
@@ -1038,7 +1033,7 @@ private fun ReadOnlyBlock(
 
 @Composable
 private fun HeadingMark(level: Int) {
-    Text("H$level", fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = uiSp(13f), color = Ink)
+    Text("H$level", fontFamily = LocalAppearance.current.articleFont.family, fontWeight = FontWeight.Normal, fontSize = uiSp(13f), color = Ink)
 }
 
 private fun modeLabel(mode: WriteMode): String = when (mode) {
@@ -1066,7 +1061,7 @@ private fun SourceEditor(viewModel: EditorViewModel, body: TextStyle) {
             field = it
             viewModel.onSource(it)
         },
-        textStyle = body.copy(fontFamily = FontFamily.Serif, fontSize = articleSp(16f), lineHeight = articleSp(26f)),
+        textStyle = body.copy(fontSize = articleSp(16f), lineHeight = articleSp(26f)),
         cursorBrush = SolidColor(Cinnabar),
         visualTransformation = remember(accent, secondary) {
             SourceMarkupTransformation(quiet, MarkdownVisualTransformation(accent, secondary, quiet, ground))
@@ -1079,7 +1074,7 @@ private fun SourceEditor(viewModel: EditorViewModel, body: TextStyle) {
 private fun ReadBlock(block: Block, postPath: String?, blog: BlogService, body: TextStyle) {
     when (block) {
         is Block.Paragraph -> StyledReadText(block.text, body)
-        is Block.Heading -> StyledReadText(block.text, body.copy(fontSize = headingSize(block.level), fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold))
+        is Block.Heading -> StyledReadText(block.text, body.copy(fontSize = headingSize(block.level), fontWeight = FontWeight.Normal))
         is Block.Quote -> Column(Modifier.border(3.dp, MiuixTheme.colorScheme.secondaryContainer).padding(start = 12.dp)) {
             block.alert?.let { Text(alertLabel(it), color = Cinnabar, fontSize = articleSp(12f)) }
             StyledReadText(block.text, body)

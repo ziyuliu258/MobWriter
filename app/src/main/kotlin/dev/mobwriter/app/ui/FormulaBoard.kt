@@ -75,7 +75,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
- * KaTeX 的默认字号是周围文字的 1.21 倍。Typora 和 MarkText 都沿用这个比例，
+ * 公式相对正文字号取 1.21 倍。Typora 和 MarkText 都用这个比例，
  * 让数学字体的 x 高和正文字母对齐，而不是另定一个像素值。
  */
 private const val MathEmScale = 1.21f

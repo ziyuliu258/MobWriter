@@ -95,7 +95,7 @@ data class BackgroundChoice(val key: String) {
     }
 }
 
-/** 字体：系统自带的衬线（中文落到宋体）和无衬线（黑体）。 */
+/** 字体：衬线是打包的 Source Serif 4 加思源宋体，无衬线用系统黑体。 */
 enum class FontFace(val key: String, val label: String) {
     Serif("serif", "宋体"),
     Sans("sans", "黑体"),

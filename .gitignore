@@ -29,6 +29,9 @@ _multiconfig.yml
 # Locally installed tools
 /tools/local/
 
+# Full variable fonts downloaded while rebuilding the bundled serif
+scripts/.font-cache/
+
 # Editor and OS temporary files
 .vscode/
 *.swp

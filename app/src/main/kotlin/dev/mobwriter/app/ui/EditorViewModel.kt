@@ -178,7 +178,6 @@ class EditorViewModel(
         val blocksSnap = blocks.map { it.block }
         val sourceSnap = sourceText
         val pendingSnap = pendingImages()
-        mode = next
         switching = true
         viewModelScope.launch {
             try {
@@ -196,6 +195,7 @@ class EditorViewModel(
                     sourceSelectionEnd = 0
                     sourceRevision++
                 }
+                mode = next
             } finally {
                 switching = false
             }

@@ -14,8 +14,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import dev.mobwriter.app.R
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import dev.mobwriter.app.core.model.Appearance
@@ -193,19 +195,29 @@ internal fun miuixColorsFor(ink: InkScheme, dark: Boolean): MiuixColors {
 }
 
 /**
- * Miuix 的字号整体收小一档。大标题和成段文字用衬线体（中文落到系统宋体），
- * 列表标签、按钮、说明保持无衬线，和 Claude 的做法一样：内容有书卷气，界面利落。
+ * 拉丁用 Source Serif 4，中文用思源宋体，都是打包进去的常规与半粗。
+ * 半粗只给真正的强调；标题保持常规，避免再合成一档假粗体。
+ */
+internal val BookSerif = FontFamily(
+    Font(R.font.book_serif_regular, FontWeight.Normal),
+    Font(R.font.book_serif_semibold, FontWeight.Medium),
+    Font(R.font.book_serif_semibold, FontWeight.SemiBold),
+    Font(R.font.book_serif_semibold, FontWeight.Bold),
+)
+
+/**
+ * Miuix 的字号整体收小一档。大标题和成段文字用衬线，
+ * 列表标签、按钮、说明保持无衬线：内容有书卷气，界面利落。
  */
 internal fun miuixTextStylesFor(scale: FontScale, uiFont: FontFace = FontFace.Sans): MiuixTextStyles {
     val base = defaultTextStyles()
     val factor = 0.9f * scale.scale
-    // 系统宋体只有常规和粗两档：中等字重会退回常规，层级就没了。用宋体时字重上调一档，系统补出粗体
     fun TextStyle.plain() = scaledBy(factor).let {
-        if (uiFont == FontFace.Serif) it.copy(fontFamily = FontFamily.Serif, fontWeight = it.fontWeight.forSerif()) else it
+        if (uiFont == FontFace.Serif) it.copy(fontFamily = BookSerif) else it
     }
-    fun TextStyle.serif(weight: FontWeight? = null) = scaledBy(factor).copy(
-        fontFamily = FontFamily.Serif,
-        fontWeight = weight ?: fontWeight,
+    fun TextStyle.serif() = scaledBy(factor).copy(
+        fontFamily = BookSerif,
+        fontWeight = FontWeight.Normal,
     )
     return defaultTextStyles(
         main = base.main.plain(),
@@ -218,22 +230,14 @@ internal fun miuixTextStylesFor(scale: FontScale, uiFont: FontFace = FontFace.Sa
         headline1 = base.headline1.plain(),
         headline2 = base.headline2.plain(),
         subtitle = base.subtitle.plain(),
-        title1 = base.title1.serif(FontWeight.SemiBold),
-        title2 = base.title2.serif(FontWeight.SemiBold),
-        title3 = base.title3.serif(FontWeight.SemiBold),
-        title4 = base.title4.serif(FontWeight.SemiBold),
+        title1 = base.title1.serif(),
+        title2 = base.title2.serif(),
+        title3 = base.title3.serif(),
+        title4 = base.title4.serif(),
     )
 }
 
-/** 宋体没有中等字重：500 → 600、600 → 700，常规和粗体不动。 */
-private fun FontWeight?.forSerif(): FontWeight? = when {
-    this == null -> null
-    weight in 500..599 -> FontWeight.SemiBold
-    weight in 600..699 -> FontWeight.Bold
-    else -> this
-}
-
-/** 列表里的文章标题：略粗，跟文章正文同一副字。 */
+/** 列表里的文章标题：跟文章正文同一副字，保持常规字重。 */
 internal val ArticleListTitle: TextStyle
     @Composable @ReadOnlyComposable get() = MiuixTheme.textStyles.title4.copy(
         fontFamily = LocalAppearance.current.articleFont.family,
@@ -242,7 +246,7 @@ internal val ArticleListTitle: TextStyle
     )
 
 internal val FontFace.family: FontFamily
-    get() = if (this == FontFace.Serif) FontFamily.Serif else FontFamily.SansSerif
+    get() = if (this == FontFace.Serif) BookSerif else FontFamily.SansSerif
 
 /** 把颜色按比例叠到底色上，得到不透明的淡色。 */
 private fun Color.over(base: Color, amount: Float): Color = Color(
@@ -276,7 +280,7 @@ internal fun articleBodyStyle(scale: FontScale, face: FontFace = FontFace.Serif)
 
 internal fun articleTitleStyle(scale: FontScale, face: FontFace = FontFace.Serif): TextStyle = TextStyle(
     fontFamily = face.family,
-    fontWeight = FontWeight.SemiBold,
+    fontWeight = FontWeight.Normal,
     fontSize = ArticleType.scaled(ArticleType.TITLE_SP, scale).sp,
     lineHeight = ArticleType.scaled(ArticleType.TITLE_LINE_SP, scale).sp,
 )
