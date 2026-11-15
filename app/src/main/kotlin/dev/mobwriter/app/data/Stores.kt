@@ -16,6 +16,7 @@ import dev.mobwriter.app.core.model.ImageMode
 import dev.mobwriter.app.core.model.PostDocument
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
+import dev.mobwriter.app.core.model.PostSummary
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
@@ -95,6 +96,7 @@ internal class AccountStore internal constructor(
 class DraftStore(context: Context, accountId: String = "") {
     private val directory = File(context.filesDir, "drafts/${draftFolderName(accountId)}").apply { mkdirs() }
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = true }
+    private val compact = Json { ignoreUnknownKeys = true }
 
     fun save(key: String, document: PostDocument) {
         val stored = StoredDraft(System.currentTimeMillis(), document, key)
@@ -109,6 +111,17 @@ class DraftStore(context: Context, accountId: String = "") {
 
     fun delete(key: String) {
         File(directory, "$key.json").delete()
+    }
+
+    /** 上次拉到的文章列表（只在这台手机上，跟草稿放在同一个账号目录里，删账号一起删）。[source] 换了仓库就作废。 */
+    fun loadCatalog(source: String): List<PostSummary>? = runCatching {
+        val file = File(directory, CATALOG)
+        if (!file.exists()) return@runCatching null
+        compact.decodeFromString<StoredCatalog>(file.readText()).takeIf { it.source == source }?.posts
+    }.getOrNull()
+
+    fun saveCatalog(source: String, posts: List<PostSummary>) {
+        runCatching { File(directory, CATALOG).writeText(compact.encodeToString(StoredCatalog(source, posts))) }
     }
 
     fun list(): List<StoredDraft> =
@@ -159,6 +172,9 @@ class DraftStore(context: Context, accountId: String = "") {
         }
 
         private const val SIGNED_OUT = "_signed_out"
+
+        /** 扩展名不是 json，草稿列表不会把它当草稿读。 */
+        private const val CATALOG = ".posts.cache"
     }
 }
 
@@ -228,3 +244,6 @@ object ImageIntake {
         return sample
     }
 }
+
+@Serializable
+private data class StoredCatalog(val source: String, val posts: List<PostSummary>)

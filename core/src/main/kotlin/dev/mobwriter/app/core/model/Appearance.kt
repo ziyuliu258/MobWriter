@@ -95,11 +95,28 @@ data class BackgroundChoice(val key: String) {
     }
 }
 
+/** 字体：系统自带的衬线（中文落到宋体）和无衬线（黑体）。 */
+enum class FontFace(val key: String, val label: String) {
+    Serif("serif", "宋体"),
+    Sans("sans", "黑体"),
+    ;
+
+    companion object {
+        fun fromStored(value: String?, fallback: FontFace): FontFace =
+            entries.firstOrNull { it.key == value?.trim() } ?: fallback
+    }
+}
+
 data class Appearance(
     val ui: FontScale = FontScale(FontScale.STANDARD),
     val article: FontScale = FontScale(FontScale.STANDARD),
     val palette: PaletteChoice = PaletteChoice.preset(Palette.Cinnabar),
     val background: BackgroundChoice = BackgroundChoice.plain(),
+    val grouping: PostGrouping = PostGrouping.Month,
+    /** 界面上的字（列表标签、按钮、说明）用哪副字。 */
+    val uiFont: FontFace = FontFace.Sans,
+    /** 文章标题和正文用哪副字。 */
+    val articleFont: FontFace = FontFace.Serif,
 ) {
     fun summary(): String = "界面 ${ui.label} · 文章 ${article.label} · ${palette.summary()}"
 }

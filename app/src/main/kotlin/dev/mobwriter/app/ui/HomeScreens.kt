@@ -17,64 +17,27 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.Article
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.Logout
-import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.EditNote
-import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.PersonAdd
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.FormatSize
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.SwitchAccount
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PlainTooltip
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberTooltipState
-import androidx.compose.ui.res.painterResource
-import dev.mobwriter.app.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -86,27 +49,33 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.mobwriter.app.R
 import dev.mobwriter.app.core.blog.BlogService
+import dev.mobwriter.app.core.blog.HexoPaths
 import dev.mobwriter.app.core.github.GitHubClient
 import dev.mobwriter.app.core.github.OkHttpTransport
 import dev.mobwriter.app.core.model.AccountSession
 import dev.mobwriter.app.core.model.Appearance
-import dev.mobwriter.app.core.blog.HexoPaths
 import dev.mobwriter.app.core.model.BlogSettings
+import dev.mobwriter.app.core.model.ImageMode
+import dev.mobwriter.app.core.model.PostGrouping
+import dev.mobwriter.app.core.model.PostListing
+import dev.mobwriter.app.core.model.PostSummary
 import dev.mobwriter.app.core.model.SiteDefaults
 import dev.mobwriter.app.core.model.SiteEngine
-import dev.mobwriter.app.core.model.ImageMode
-import dev.mobwriter.app.core.model.PostSummary
 import dev.mobwriter.app.core.model.connectionLabel
+import dev.mobwriter.app.core.model.searchText
 import dev.mobwriter.app.data.AccountStore
 import dev.mobwriter.app.data.AppearanceStore
 import dev.mobwriter.app.data.AvatarCache
@@ -117,9 +86,20 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import com.kyant.backdrop.backdrops.layerBackdrop
+import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
+import top.yukonga.miuix.kmp.basic.InputField
+import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.SearchBar
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
+import java.time.LocalDate
 import java.util.UUID
-
-internal enum class MainTab { Home, Me }
 
 private sealed interface Scene {
     data class Tabs(val tab: MainTab) : Scene
@@ -127,9 +107,12 @@ private sealed interface Scene {
 }
 
 private sealed interface Overlay {
+    /** 账户信息表单。creating = 添加新账号。 */
     data class Settings(val creating: Boolean) : Overlay
+    data object Appearance : Overlay
     data object SwitchAccount : Overlay
     data class Edit(val remotePath: String?, val draftKey: String) : Overlay
+    data object Search : Overlay
 }
 
 internal data class AccountChoice(
@@ -151,7 +134,7 @@ fun MobWriterApp() {
             showSplash = false
         }
         UpdateHost {
-            Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().background(Paper)) {
                 AppearanceBackground(appearance.background)
                 AppContent(
                     appearance = appearance,
@@ -178,13 +161,13 @@ private fun SplashCover() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        androidx.compose.foundation.Image(
-            painter = androidx.compose.ui.res.painterResource(dev.mobwriter.app.R.drawable.mobwriter_logo),
+        Image(
+            painter = painterResource(R.drawable.mobwriter_logo),
             contentDescription = null,
             modifier = Modifier.size(120.dp),
         )
-        Text("墨哺", style = MaterialTheme.typography.headlineMedium, color = Ink)
-        Text("MobWriter", color = Muted, modifier = Modifier.padding(top = 4.dp))
+        Text("墨哺", style = MiuixTheme.textStyles.title2, color = Ink)
+        Text("MobWriter", color = Muted, style = MiuixTheme.textStyles.footnote1, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
@@ -268,8 +251,12 @@ private fun AppContent(
         }
         avatarLoading = false
     }
-    var knownTags by remember { mutableStateOf<List<String>>(emptyList()) }
-    var knownCategories by remember { mutableStateOf<List<String>>(emptyList()) }
+    // 文章列表挂在整个应用上：换页回来不重新拉
+    val catalogScope = androidx.compose.runtime.rememberCoroutineScope()
+    val catalog = remember(blog, drafts) { PostCatalog(blog, drafts, catalogScope) }
+    val knownTags = remember(catalog.posts) { catalog.posts.flatMap { it.tags }.distinct() }
+    val knownCategories = remember(catalog.posts) { catalog.posts.flatMap { it.categories }.distinct() }
+    var filter by remember(accountId) { mutableStateOf(PostFilter()) }
     fun persist(next: AccountSession) {
         accountStore.save(next)
         session = next
@@ -278,8 +265,12 @@ private fun AppContent(
         if (overlay.isNotEmpty()) overlay.removeAt(overlay.lastIndex)
     }
     BackHandler(enabled = overlay.isNotEmpty(), onBack = ::pop)
-    val bottomBar: @Composable () -> Unit = { MobBottomBar(tab) { tab = it } }
+    // 底栏只画一份，浮在页面外面；页面只给它让出位置，换页时它不跟着动
+    val bottomBar: @Composable () -> Unit = { DockSpace() }
+    val dockBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
     val scene = overlay.lastOrNull()?.let { Scene.Page(it) } ?: Scene.Tabs(tab)
+    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().layerBackdrop(dockBackdrop)) {
     AnimatedContent(
         targetState = scene,
         transitionSpec = {
@@ -302,24 +293,29 @@ private fun AppContent(
         null -> when ((current as Scene.Tabs).tab) {
             MainTab.Home -> key(accountId) {
                 PostListScreen(
-                    blog = blog,
-                    drafts = drafts,
+                    catalog = catalog,
+                    filter = filter,
+                    onFilter = { filter = it },
+                    onGrouping = { onAppearance(appearance.copy(grouping = it)) },
+                    onSearch = { overlay.add(Overlay.Search) },
                     onOpen = { path -> overlay.add(Overlay.Edit(path, DraftStore.keyForRemote(path))) },
                     onNew = { overlay.add(Overlay.Edit(null, DraftStore.newKey())) },
                     onOpenDraft = { draft ->
                         overlay.add(Overlay.Edit(draft.document.path, draft.key.ifBlank { DraftStore.newKey() }))
                     },
-                    onCatalog = { tags, categories ->
-                        knownTags = tags
-                        knownCategories = categories
-                    },
+                    grouping = appearance.grouping,
                     bottomBar = bottomBar,
                 )
             }
             MainTab.Me -> MeScreen(
-                onOpenSettings = {
+                onOpenAccount = {
                     if (overlay.none { it is Overlay.Settings }) overlay.add(Overlay.Settings(creating = false))
                 },
+                onOpenAppearance = {
+                    if (overlay.none { it is Overlay.Appearance }) overlay.add(Overlay.Appearance)
+                },
+                appearance = appearance,
+                onAppearance = onAppearance,
                 author = author,
                 accountLabel = session.active?.settings?.connectionLabel() ?: "未登录",
                 avatar = avatar,
@@ -330,12 +326,22 @@ private fun AppContent(
                 bottomBar = bottomBar,
             )
         }
+        Overlay.Search -> SearchPage(
+            catalog = catalog,
+            onOpen = { path -> overlay.add(Overlay.Edit(path, DraftStore.keyForRemote(path))) },
+            onOpenDraft = { draft ->
+                overlay.add(Overlay.Edit(draft.document.path, draft.key.ifBlank { DraftStore.newKey() }))
+            },
+            onClose = ::pop,
+        )
+        Overlay.Appearance -> AppearanceScreen(
+            appearance = appearance,
+            onChange = onAppearance,
+            onClose = ::pop,
+        )
         is Overlay.Settings -> SetupScreen(
             initial = if (screen.creating) BlogSettings() else settings,
-            title = if (screen.creating) "添加账号" else "设置",
-            showUpdate = !screen.creating,
-            appearance = appearance,
-            onAppearance = onAppearance,
+            title = if (screen.creating) "添加账号" else "账户信息",
             onSave = { updated ->
                 val wasSignedOut = session.active == null
                 val next = if (screen.creating) {
@@ -347,7 +353,8 @@ private fun AppContent(
                 overlay.clear()
                 if (wasSignedOut || screen.creating) tab = MainTab.Home
             },
-            onClose = ::pop,
+            // 还没有任何账号时这是第一页，没有可以返回的地方
+            onClose = if (session.accounts.isEmpty() && overlay.size <= 1) null else ::pop,
         )
         Overlay.SwitchAccount -> SwitchAccountScreen(
             accounts = session.accounts.map { account ->
@@ -395,43 +402,122 @@ private fun AppContent(
                 suggestedCategories = knownCategories,
                 onBack = ::pop,
                 onPickImage = { picker.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly)) },
+                onPublished = { catalog.refresh(byUser = false) },
             )
+        }
+    }
+    }
+    }
+    androidx.compose.animation.AnimatedVisibility(
+        visible = scene is Scene.Tabs,
+        modifier = Modifier.align(Alignment.BottomCenter),
+        enter = fadeIn(tween(220)) + androidx.compose.animation.slideInVertically(tween(280)) { it / 2 },
+        exit = fadeOut(tween(160)) + androidx.compose.animation.slideOutVertically(tween(220)) { it / 2 },
+    ) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalPageBackdrop provides dockBackdrop) {
+            MainNavigationBar(tab = tab, onSelect = { tab = it })
         }
     }
     }
 }
 
+/** 主页的筛选：只看某个分类、某个标签。只在这次打开里有效。 */
+internal data class PostFilter(val category: String? = null, val tag: String? = null) {
+    val active: Boolean get() = category != null || tag != null
+    fun matches(post: PostSummary): Boolean =
+        (category == null || category in post.categories) && (tag == null || tag in post.tags)
+}
+
+/** 搜索页：顶上是 Miuix 原装搜索栏，命中的草稿和文章列在下面。 */
 @Composable
-internal fun MobBottomBar(tab: MainTab, onSelect: (MainTab) -> Unit) {
-    val colors = NavigationBarItemDefaults.colors(
-        selectedIconColor = Cinnabar,
-        selectedTextColor = Cinnabar,
-        indicatorColor = MaterialTheme.colorScheme.surfaceVariant,
-        unselectedIconColor = Muted,
-        unselectedTextColor = Muted,
-    )
-    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-        NavigationBarItem(
-            selected = tab == MainTab.Home,
-            onClick = { onSelect(MainTab.Home) },
-            icon = { Icon(Icons.Outlined.Home, contentDescription = null) },
-            label = { Text("主页") },
-            colors = colors,
-        )
-        NavigationBarItem(
-            selected = tab == MainTab.Me,
-            onClick = { onSelect(MainTab.Me) },
-            icon = { Icon(Icons.Outlined.Person, contentDescription = null) },
-            label = { Text("我的") },
-            colors = colors,
-        )
+private fun SearchPage(
+    catalog: PostCatalog,
+    onOpen: (String) -> Unit,
+    onOpenDraft: (StoredDraft) -> Unit,
+    onClose: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    // 和主页同一份列表，不再自己拉一遍
+    LaunchedEffect(Unit) { catalog.open() }
+    val posts = catalog.posts
+    val local = catalog.local
+    val needle = query.trim()
+    val hits = remember(needle, posts, local) {
+        if (needle.isEmpty()) return@remember emptyList()
+        buildList {
+            local.forEach { draft ->
+                val plain = draft.document.blocks.joinToString("\n") { it.searchText() }
+                val title = draft.document.title.ifBlank { "未命名" }
+                if (title.contains(needle, true) || plain.contains(needle, true)) {
+                    add(Triple(title, bodyHit(plain, needle), { onOpenDraft(draft) }))
+                }
+            }
+            posts.forEach { post ->
+                if (post.title.contains(needle, true) || post.plain.contains(needle, true)) {
+                    add(Triple(post.title, bodyHit(post.plain, needle), { onOpen(post.path) }))
+                }
+            }
+        }
+    }
+    Scaffold(
+        containerColor = Color.Transparent,
+        topBar = {
+            SearchBar(
+                inputField = {
+                    InputField(
+                        query = query,
+                        onQueryChange = { query = it },
+                        onSearch = {},
+                        expanded = true,
+                        onExpandedChange = { if (!it) onClose() },
+                        label = "搜索标题和正文",
+                        leadingIcon = {
+                            Icon(Icons.Outlined.Search, contentDescription = null, tint = Muted, modifier = Modifier.padding(start = 12.dp, end = 4.dp))
+                        },
+                    )
+                },
+                onExpandedChange = { if (!it) onClose() },
+                modifier = Modifier.background(Paper).padding(top = 8.dp).statusBarsPadding(),
+                expanded = true,
+                outsideEndAction = {
+                    Text(
+                        "取消",
+                        color = Cinnabar,
+                        modifier = Modifier
+                            .padding(end = 16.dp)
+                            .clickable(interactionSource = null, indication = null, onClick = onClose),
+                    )
+                },
+            ) {}
+        },
+    ) { inner ->
+        LazyColumn(
+            Modifier.fillMaxHeight().overScrollVertical(),
+            contentPadding = PaddingValues(top = inner.calculateTopPadding() + 8.dp, bottom = inner.calculateBottomPadding() + 24.dp),
+        ) {
+            when {
+                needle.isEmpty() -> inkNote("在手机上的草稿和仓库里的文章中查找。")
+                hits.isEmpty() -> inkNote("没有找到「$needle」。")
+                else -> inkSection(title = "${hits.size} 篇") {
+                    hits.forEach { (title, hit, open) ->
+                        BasicComponent(onClick = open) {
+                            Text(title, style = ArticleListTitle, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            if (hit != null) BodyPreview(hit)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** 「我的」：头像和账户在上，原来的设置项平铺在下面，不再另开一页。 */
 @Composable
 internal fun MeScreen(
-    onOpenSettings: () -> Unit,
+    onOpenAccount: () -> Unit,
+    onOpenAppearance: () -> Unit = {},
+    appearance: Appearance = Appearance(),
+    onAppearance: (Appearance) -> Unit = {},
     author: String = "",
     accountLabel: String = "未登录",
     avatar: ImageBitmap? = null,
@@ -439,35 +525,33 @@ internal fun MeScreen(
     onSwitchAccount: () -> Unit = {},
     bottomBar: @Composable () -> Unit,
 ) {
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                modifier = Modifier,
-                title = { Text("我的") },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-            )
-        },
-        bottomBar = bottomBar,
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
+    InkPage(title = "我的", bottomBar = bottomBar) {
+        item {
             Column(
-                Modifier.fillMaxWidth().padding(vertical = 28.dp),
+                Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 AvatarBadge(avatar, avatarLoading)
-                if (author.isNotBlank()) {
-                    Text(author, style = MaterialTheme.typography.headlineMedium, color = Ink)
-                }
+                Spacer(Modifier.height(12.dp))
                 Text(
-                    accountLabel,
-                    style = if (author.isBlank()) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.bodyLarge,
-                    color = if (author.isBlank()) Ink else Muted,
-                    modifier = Modifier.padding(top = if (author.isBlank()) 0.dp else 4.dp),
+                    author.ifBlank { accountLabel },
+                    style = MiuixTheme.textStyles.title3,
+                    color = Ink,
                 )
+                if (author.isNotBlank()) {
+                    Text(accountLabel, color = Muted, style = MiuixTheme.textStyles.body2, modifier = Modifier.padding(top = 4.dp))
+                }
             }
-            MeEntry(Icons.Outlined.SwitchAccount, "切换账号", onSwitchAccount)
-            MeEntry(Icons.Outlined.Settings, "设置", onOpenSettings)
+        }
+        inkSection(title = "账户") {
+            ArrowPreference(title = "账户信息", summary = "仓库、令牌与发布", onClick = onOpenAccount)
+            ArrowPreference(title = "切换账号", onClick = onSwitchAccount)
+        }
+        inkSection(title = "显示") {
+            ArrowPreference(title = "外观", summary = appearance.summary(), onClick = onOpenAppearance)
+        }
+        inkSection(title = "关于") {
+            UpdateSettingRow()
         }
     }
 }
@@ -485,13 +569,13 @@ private fun AvatarBadge(avatar: ImageBitmap?, loading: Boolean) {
             Modifier.size(72.dp).semantics { contentDescription = "头像加载中" },
             contentAlignment = Alignment.Center,
         ) {
-            CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp, color = Cinnabar)
+            InfiniteProgressIndicator(color = Cinnabar)
         }
         else -> Box(
             Modifier
                 .size(72.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .background(MiuixTheme.colorScheme.surfaceContainer),
             contentAlignment = Alignment.Center,
         ) {
             Icon(Icons.Outlined.Person, contentDescription = "默认头像", tint = Muted, modifier = Modifier.size(36.dp))
@@ -499,34 +583,6 @@ private fun AvatarBadge(avatar: ImageBitmap?, loading: Boolean) {
     }
 }
 
-@Composable
-private fun MeEntry(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    subtitle: String = "",
-) {
-    Column(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(icon, contentDescription = null, tint = Muted, modifier = Modifier.size(22.dp))
-            if (subtitle.isBlank()) {
-                Text(label, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 14.dp).weight(1f))
-            } else {
-                Column(Modifier.padding(start = 14.dp).weight(1f)) {
-                    Text(label, style = MaterialTheme.typography.titleLarge)
-                    Text(subtitle, color = Muted)
-                }
-            }
-            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = Muted)
-        }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SwitchAccountScreen(
     accounts: List<AccountChoice>,
@@ -539,285 +595,311 @@ internal fun SwitchAccountScreen(
 ) {
     var pendingId by remember { mutableStateOf<String?>(null) }
     val pending = accounts.firstOrNull { it.id == pendingId }
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                modifier = Modifier,
-                title = { Text("切换账号") },
-                navigationIcon = {
-                    AppIconButton("返回", onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-            )
-        },
-    ) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            if (accounts.isEmpty()) {
-                Text("还没有已保存的账号", color = Muted, modifier = Modifier.padding(vertical = 16.dp))
-            }
-            accounts.forEach { account ->
-                Column(Modifier.fillMaxWidth()) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(
-                            Modifier.weight(1f).clickable { onSwitch(account.id) }.padding(vertical = 14.dp),
-                        ) {
-                            Text(account.label, style = MaterialTheme.typography.titleLarge)
-                            if (account.detail.isNotBlank()) Text(account.detail, color = Muted)
-                        }
-                        if (account.current) {
-                            Icon(Icons.Outlined.Check, contentDescription = "当前账号", tint = Cinnabar)
-                        }
-                        AppIconButton("删除${account.label}", onClick = { pendingId = account.id }) {
-                            Icon(Icons.Outlined.Delete, contentDescription = "删除${account.label}")
-                        }
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    InkPage(title = "切换账号", onBack = onClose) {
+        if (accounts.isEmpty()) {
+            inkNote("还没有已保存的账号")
+        } else {
+            inkSection(title = "已保存的账号") {
+                accounts.forEach { account ->
+                    BasicComponent(
+                        title = account.label,
+                        summary = account.detail.ifBlank { null },
+                        onClick = { onSwitch(account.id) },
+                        endActions = {
+                            if (account.current) {
+                                Icon(Icons.Outlined.Check, contentDescription = "当前账号", tint = Cinnabar)
+                            }
+                            AppIconButton("删除${account.label}", onClick = { pendingId = account.id }, tint = Muted) {
+                                Icon(Icons.Outlined.Delete, contentDescription = "删除${account.label}")
+                            }
+                        },
+                    )
                 }
             }
-            MeEntry(Icons.Outlined.PersonAdd, "添加账号", onAdd)
-            if (signedIn) {
-                Text(
-                    "退出当前账号后，这个账号的令牌和草稿仍留在手机上，可以再切换回来。其他账号也不会被清除。",
-                    color = Muted,
-                    modifier = Modifier.padding(top = 20.dp, bottom = 8.dp),
+        }
+        inkSection(title = null) {
+            ArrowPreference(title = "添加账号", onClick = onAdd)
+        }
+        if (signedIn) {
+            inkNote("退出当前账号后，这个账号的令牌和草稿仍留在手机上，可以再切换回来。其他账号也不会被清除。")
+            inkSection(title = null) {
+                BasicComponent(
+                    title = "退出登录",
+                    onClick = onSignOut,
+                    startAction = {
+                        Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null, tint = Cinnabar, modifier = Modifier.padding(end = 12.dp))
+                    },
                 )
-                MeEntry(Icons.AutoMirrored.Outlined.Logout, "退出登录", onSignOut)
             }
-            Spacer(Modifier.height(24.dp))
         }
     }
     if (pending != null) {
-        AlertDialog(
-            onDismissRequest = { pendingId = null },
-            title = { Text("删除账号") },
-            text = { Text("「${pending.label}」的令牌和草稿会从这台手机上移除。其他账号不受影响。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    val id = pending.id
-                    pendingId = null
-                    onDelete(id)
-                }) { Text("删除") }
+        InkSheet(
+            onDismiss = { pendingId = null },
+            title = "删除账号",
+            primary = "删除",
+            onPrimary = {
+                val id = pending.id
+                pendingId = null
+                onDelete(id)
             },
-            dismissButton = {
-                TextButton(onClick = { pendingId = null }) { Text("取消") }
-            },
-        )
+        ) { Text("「${pending.label}」的令牌和草稿会从这台手机上移除。其他账号不受影响。") }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** 测试和单独预览用：自己建一份列表缓存。 */
 @Composable
 internal fun PostListScreen(
     blog: BlogService,
     drafts: DraftStore,
     onOpen: (String) -> Unit,
+    onSearch: () -> Unit,
     onNew: () -> Unit,
     onOpenDraft: (StoredDraft) -> Unit,
-    onCatalog: (List<String>, List<String>) -> Unit,
+    onCatalog: (List<String>, List<String>) -> Unit = { _, _ -> },
+    grouping: PostGrouping = PostGrouping.Month,
     bottomBar: @Composable () -> Unit,
 ) {
-    var posts by remember { mutableStateOf<List<PostSummary>>(emptyList()) }
-    var local by remember { mutableStateOf<List<StoredDraft>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var query by remember { mutableStateOf("") }
-    val connected = blog.settings.token.isNotBlank() && blog.settings.owner.isNotBlank() && blog.settings.repo.isNotBlank()
-    LaunchedEffect(loading) {
-        if (!loading) return@LaunchedEffect
-        local = drafts.list().filter { it.document.path == null || it.key.startsWith("n-") }
-        if (!connected) {
-            posts = emptyList()
-            error = null
-            loading = false
-            return@LaunchedEffect
-        }
-        posts = runCatching { withContext(Dispatchers.IO) { blog.listPosts() } }
-            .onFailure { error = it.message ?: "读不到文章" }
-            .getOrDefault(emptyList())
-        onCatalog(posts.flatMap { it.tags }.distinct(), posts.flatMap { it.categories }.distinct())
-        loading = false
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val catalog = remember(blog, drafts) { PostCatalog(blog, drafts, scope) }
+    var filter by remember { mutableStateOf(PostFilter()) }
+    var shownGrouping by remember(grouping) { mutableStateOf(grouping) }
+    LaunchedEffect(catalog.posts) {
+        onCatalog(catalog.posts.flatMap { it.tags }.distinct(), catalog.posts.flatMap { it.categories }.distinct())
     }
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                modifier = Modifier,
-                title = { Text("墨哺") },
-                actions = {
-                    if (loading) {
-                        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = Cinnabar)
-                        }
-                    } else {
-                        AppIconButton("刷新", onClick = { loading = true }) {
-                            Icon(Icons.Outlined.Refresh, contentDescription = "刷新")
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-            )
-        },
+    PostListScreen(
+        catalog = catalog,
+        filter = filter,
+        onFilter = { filter = it },
+        grouping = shownGrouping,
+        onGrouping = { shownGrouping = it },
+        onOpen = onOpen,
+        onSearch = onSearch,
+        onNew = onNew,
+        onOpenDraft = onOpenDraft,
         bottomBar = bottomBar,
-        floatingActionButton = {
-            if (connected) TooltipBox(
-                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                tooltip = { PlainTooltip { Text("写文章") } },
-                state = rememberTooltipState(),
+    )
+}
+
+/** 主页：草稿和仓库里的文章。右上角菜单选排列方式，二级菜单按分类、标签筛选。 */
+@Composable
+internal fun PostListScreen(
+    catalog: PostCatalog,
+    filter: PostFilter,
+    onFilter: (PostFilter) -> Unit,
+    grouping: PostGrouping,
+    onGrouping: (PostGrouping) -> Unit,
+    onOpen: (String) -> Unit,
+    onSearch: () -> Unit,
+    onNew: () -> Unit,
+    onOpenDraft: (StoredDraft) -> Unit,
+    bottomBar: @Composable () -> Unit,
+) {
+    LaunchedEffect(catalog) { catalog.open() }
+    val year = remember { LocalDate.now().year }
+    val shown = remember(catalog.posts, filter) { catalog.posts.filter(filter::matches) }
+    val groups = remember(shown, grouping) { PostListing.group(shown, grouping) }
+    val categories = remember(catalog.posts) { catalog.posts.flatMap { it.categories }.filter(String::isNotBlank).distinct().sorted() }
+    val tags = remember(catalog.posts) { catalog.posts.flatMap { it.tags }.filter(String::isNotBlank).distinct().sorted() }
+    var menu by remember { mutableStateOf(false) }
+    InkPage(
+        title = "墨哺",
+        bottomBar = bottomBar,
+        refreshing = catalog.pulling,
+        onRefresh = { catalog.refresh() },
+        actions = {
+            AppIconButton("搜索", onClick = onSearch) {
+                Icon(Icons.Outlined.Search, contentDescription = "搜索")
+            }
+            AppIconMenu(
+                expanded = menu,
+                onExpandedChange = { menu = it },
+                label = "排列与筛选",
+                icon = {
+                    Icon(
+                        Icons.AutoMirrored.Outlined.Sort,
+                        contentDescription = "排列与筛选",
+                        tint = if (filter.active) Cinnabar else Ink,
+                    )
+                },
             ) {
-                FloatingActionButton(onClick = onNew, containerColor = Cinnabar) {
-                    Icon(Icons.Outlined.Edit, contentDescription = "写文章", tint = MaterialTheme.colorScheme.onPrimary)
+                PostGrouping.entries.forEach { option ->
+                    AppDropdownOption(option.label, selected = grouping == option) {
+                        menu = false
+                        onGrouping(option)
+                    }
+                }
+                if (categories.isNotEmpty()) {
+                    AppDropdownSubMenu(title = "只看分类", summary = filter.category ?: "全部") {
+                        AppDropdownOption("全部", selected = filter.category == null) {
+                            menu = false
+                            onFilter(filter.copy(category = null))
+                        }
+                        categories.forEach { name ->
+                            AppDropdownOption(name, selected = filter.category == name) {
+                                menu = false
+                                onFilter(filter.copy(category = name))
+                            }
+                        }
+                    }
+                }
+                if (tags.isNotEmpty()) {
+                    AppDropdownSubMenu(title = "只看标签", summary = filter.tag ?: "全部") {
+                        AppDropdownOption("全部", selected = filter.tag == null) {
+                            menu = false
+                            onFilter(filter.copy(tag = null))
+                        }
+                        tags.forEach { name ->
+                            AppDropdownOption(name, selected = filter.tag == name) {
+                                menu = false
+                                onFilter(filter.copy(tag = name))
+                            }
+                        }
+                    }
+                }
+            }
+            if (catalog.connected) {
+                AppIconButton("写文章", onClick = onNew) {
+                    Icon(Icons.Outlined.Edit, contentDescription = "写文章")
                 }
             }
         },
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("搜索") },
-                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-                singleLine = true,
+    ) {
+        catalog.error?.let { inkNote(it) }
+        if (filter.active) {
+            inkNote(
+                listOfNotNull(filter.category?.let { "分类「$it」" }, filter.tag?.let { "标签「$it」" })
+                    .joinToString("、", prefix = "只看") + " · 共 ${shown.size} 篇",
             )
-            error?.let { Text(it, color = Cinnabar, modifier = Modifier.padding(top = 8.dp)) }
-            LazyColumn(contentPadding = PaddingValues(bottom = 88.dp)) {
-                if (local.isNotEmpty()) {
-                    item { Text("手机上的草稿", color = Muted, modifier = Modifier.padding(vertical = 8.dp)) }
-                    items(local, key = { it.key + it.savedAt }) { draft ->
-                        PostRow(draft.document.title.ifBlank { "未命名" }, "还没发布", draft.document.tags, unpublished = true) {
-                            onOpenDraft(draft)
-                        }
-                    }
+        }
+        if (catalog.local.isNotEmpty() && !filter.active) {
+            inkSection(title = "手机上的草稿", key = "drafts") {
+                catalog.local.forEach { draft ->
+                    PostItem(
+                        title = draft.document.title.ifBlank { "未命名" },
+                        meta = listOf("还没发布"),
+                        tags = draft.document.tags,
+                        draft = true,
+                    ) { onOpenDraft(draft) }
                 }
-                item { Text("仓库里的文章", color = Muted, modifier = Modifier.padding(vertical = 8.dp)) }
-                val visible = posts.filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
-                items(visible, key = { it.path }) { post ->
-                    PostRow(post.title, post.date, post.tags, unpublished = false) { onOpen(post.path) }
+            }
+        }
+        groups.forEach { group ->
+            inkSection(title = group.title.ifBlank { "仓库里的文章" }, key = "g:" + group.title) {
+                group.posts.forEach { post ->
+                    val series = post.series?.takeIf { it.isNotBlank() && grouping != PostGrouping.Series }
+                    val index = post.seriesIndex?.let { "第 $it 篇" }
+                    PostItem(
+                        title = post.title,
+                        meta = listOfNotNull(
+                            PostListing.dateLabel(post.date, year).ifBlank { null },
+                            series,
+                            index.takeIf { grouping == PostGrouping.Series },
+                        ),
+                        tags = post.tags,
+                        excerpt = post.plain,
+                        onTag = { onFilter(filter.copy(tag = it)) },
+                    ) { onOpen(post.path) }
                 }
-                if (!loading && !connected) {
-                    item { Text("还没有登录。到「我的」里切换账号。", modifier = Modifier.padding(top = 24.dp)) }
-                } else if (!loading && visible.isEmpty() && error == null) {
-                    item { Text("还没有文章", modifier = Modifier.padding(top = 24.dp)) }
-                }
-                if (loading && posts.isEmpty()) {
-                    item {
-                        Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = Cinnabar)
-                        }
-                    }
+            }
+        }
+        when {
+            catalog.ready && !catalog.connected -> inkNote("还没有登录。到「我的」里切换账号。")
+            catalog.ready && filter.active && shown.isEmpty() -> inkNote("没有符合筛选的文章。")
+            catalog.ready && catalog.posts.isEmpty() && catalog.local.isEmpty() && catalog.error == null -> inkNote("还没有文章")
+            !catalog.ready -> item {
+                Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    InfiniteProgressIndicator(color = Cinnabar)
                 }
             }
         }
     }
 }
 
+/** 去掉摘要里的 Markdown 记号：链接只留文字，反引号、强调、标题井号去掉。 */
+private fun excerptOf(plain: String): String = plain
+    .replace(Regex("""!\[[^\]]*]\([^)]*\)"""), "")
+    .replace(Regex("""\[([^\]]*)]\([^)]*\)"""), "$1")
+    .replace(Regex("""[`*_~#>]+"""), "")
+    .replace(Regex("""\s+"""), " ")
+    .trim()
+    .take(140)
+
+/** 列表里的一篇：衬线标题，两行摘要，一行淡墨的日期，下面一排标签胶囊。草稿用主色标出。 */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun PostRow(title: String, date: String, tags: List<String>, unpublished: Boolean, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = if (unpublished) Icons.Outlined.EditNote else Icons.AutoMirrored.Outlined.Article,
-                contentDescription = null,
-                tint = if (unpublished) Cinnabar else Muted,
-                modifier = Modifier.size(22.dp),
+private fun PostItem(
+    title: String,
+    meta: List<String>,
+    tags: List<String> = emptyList(),
+    excerpt: String = "",
+    draft: Boolean = false,
+    onTag: ((String) -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    BasicComponent(onClick = onClick) {
+        Text(title, style = ArticleListTitle, color = Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        val summary = remember(excerpt) { excerptOf(excerpt) }
+        if (summary.isNotEmpty()) {
+            Text(
+                summary,
+                style = MiuixTheme.textStyles.body2,
+                color = Muted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp),
             )
-            Column(Modifier.padding(start = 14.dp).weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleLarge)
-                val subtitle = listOf(date).plus(tags.take(3)).filter { it.isNotBlank() }.joinToString("  ·  ")
-                if (subtitle.isNotBlank()) Text(subtitle, color = Muted)
+        }
+        val line = meta.filter { it.isNotBlank() }.joinToString("  ·  ")
+        val shownTags = tags.filter { it.isNotBlank() }
+        if (line.isNotEmpty() || shownTags.isNotEmpty()) {
+            androidx.compose.foundation.layout.FlowRow(
+                modifier = Modifier.padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (line.isNotEmpty()) {
+                    Text(
+                        line,
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = if (draft) Cinnabar else MiuixTheme.colorScheme.onSurfaceVariantActions,
+                        maxLines = 1,
+                        modifier = Modifier.padding(end = 4.dp),
+                    )
+                }
+                shownTags.take(4).forEach { tag -> TagChip(tag, onTag) }
+                if (shownTags.size > 4) TagChip("+${shownTags.size - 4}", null)
             }
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** 文章上的标签：小号淡色胶囊，点一下只看这个标签。 */
+@Composable
+private fun TagChip(text: String, onClick: ((String) -> Unit)?) {
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(50)
+    Box(
+        Modifier
+            .clip(shape)
+            .background(MiuixTheme.colorScheme.secondaryContainer)
+            .then(if (onClick != null) Modifier.clickable { onClick(text) } else Modifier)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    ) {
+        Text("#$text", style = MiuixTheme.textStyles.footnote2, color = Muted, maxLines = 1)
+    }
+}
+
 @Composable
 internal fun SetupScreen(
     initial: BlogSettings,
     onSave: (BlogSettings) -> Unit,
     onClose: (() -> Unit)?,
-    title: String = "设置",
-    showUpdate: Boolean = true,
-    appearance: Appearance = Appearance(),
-    onAppearance: (Appearance) -> Unit = {},
+    title: String = "账户信息",
 ) {
-    var page by remember { mutableStateOf(SettingsPage.List) }
-    BackHandler(enabled = showUpdate && page != SettingsPage.List) { page = SettingsPage.List }
-    when {
-        showUpdate && page == SettingsPage.List -> SettingsListScreen(
-            accountLabel = initial.connectionLabel(),
-            appearance = appearance,
-            onOpenAccount = { page = SettingsPage.Account },
-            onOpenAppearance = { page = SettingsPage.Appearance },
-            onClose = onClose,
-        )
-        showUpdate && page == SettingsPage.Appearance -> AppearanceScreen(
-            appearance = appearance,
-            onChange = onAppearance,
-            onClose = { page = SettingsPage.List },
-        )
-        else -> AccountSettingsForm(
-            initial = initial,
-            onSave = onSave,
-            onClose = if (showUpdate) ({ page = SettingsPage.List }) else onClose,
-            title = if (showUpdate) "账户信息" else title,
-        )
-    }
+    AccountSettingsForm(initial = initial, onSave = onSave, onClose = onClose, title = title)
 }
 
-private enum class SettingsPage { List, Account, Appearance }
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SettingsListScreen(
-    accountLabel: String,
-    appearance: Appearance,
-    onOpenAccount: () -> Unit,
-    onOpenAppearance: () -> Unit,
-    onClose: (() -> Unit)?,
-) {
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                modifier = Modifier,
-                title = { Text("设置") },
-                navigationIcon = {
-                    if (onClose != null) {
-                        AppIconButton("返回", onClick = onClose) {
-                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-            )
-        },
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
-            MeEntry(Icons.Outlined.AccountCircle, "账户信息", onOpenAccount, subtitle = accountLabel)
-            MeEntry(Icons.Outlined.FormatSize, "外观", onOpenAppearance, subtitle = appearance.summary())
-            UpdateSettingRow()
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AccountSettingsForm(
     initial: BlogSettings,
@@ -842,154 +924,138 @@ private fun AccountSettingsForm(
     val savedToken = initial.token
     val tokenToStore = token.trim().ifBlank { savedToken }
     val canSave = tokenToStore.isNotBlank() && owner.isNotBlank() && repo.isNotBlank()
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                modifier = Modifier,
-                title = { Text(title) },
-                navigationIcon = {
-                    if (onClose != null) {
-                        AppIconButton("返回", onClick = onClose) {
-                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
-                        }
-                    }
+    InkPage(
+        title = title,
+        onBack = onClose,
+        actions = {
+            AppIconButton(
+                label = "保存",
+                enabled = canSave,
+                tint = Cinnabar,
+                onClick = {
+                    onSave(
+                        BlogSettings(
+                            owner = owner,
+                            repo = repo,
+                            branch = branch,
+                            postsPath = posts,
+                            engine = engine,
+                            imageMode = imageMode,
+                            imageDirectory = imageDirectory,
+                            assetsDirectory = assetsDirectory,
+                            seriesIndexKey = seriesIndexKey,
+                            seriesFile = seriesFile,
+                            autoBuild = autoBuild,
+                            workflow = workflow,
+                            token = tokenToStore,
+                        ),
+                    )
                 },
-                actions = {
-                    AppIconButton(
-                        label = "保存",
-                        enabled = canSave,
-                        tint = Cinnabar,
-                        onClick = {
-                            onSave(
-                                BlogSettings(
-                                    owner = owner,
-                                    repo = repo,
-                                    branch = branch,
-                                    postsPath = posts,
-                                    engine = engine,
-                                    imageMode = imageMode,
-                                    imageDirectory = imageDirectory,
-                                    assetsDirectory = assetsDirectory,
-                                    seriesIndexKey = seriesIndexKey,
-                                    seriesFile = seriesFile,
-                                    autoBuild = autoBuild,
-                                    workflow = workflow,
-                                    token = tokenToStore,
-                                ),
-                            )
-                        },
-                    ) {
-                        Icon(Icons.Outlined.Check, contentDescription = "保存")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-            )
+            ) {
+                Icon(Icons.Outlined.Check, contentDescription = "保存")
+            }
         },
-    ) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 20.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(if (savedToken.isNotBlank()) "令牌只保存在这台手机上。已保存，留空则保持不变。" else "令牌只保存在这台手机上。")
-            OutlinedTextField(
-                value = token,
-                onValueChange = { token = it },
-                label = { Text("GitHub 令牌") },
-                placeholder = { if (savedToken.isNotBlank()) Text("已保存，留空则保持不变") },
-                modifier = Modifier.fillMaxWidth(),
-                visualTransformation = PasswordVisualTransformation(),
-                trailingIcon = {
-                    AppIconButton("在 GitHub 创建令牌", onClick = {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/settings/tokens/new")))
-                    }) {
-                        Icon(painterResource(R.drawable.ic_github), contentDescription = "在 GitHub 创建令牌")
+    ) {
+        item { Column {
+        Text(
+            "令牌只保存在这台手机上。",
+            color = Muted,
+            style = MiuixTheme.textStyles.footnote1,
+            modifier = Modifier.padding(horizontal = 28.dp, vertical = 4.dp),
+        )
+        InkGroup("仓库") {
+            run {
+                InkField(
+                    value = token,
+                    onValueChange = { token = it },
+                    label = "GitHub 令牌",
+                    supporting = if (savedToken.isNotBlank()) "已保存，留空则保持不变" else "",
+                    visualTransformation = PasswordVisualTransformation(),
+                    trailing = {
+                        AppIconButton("在 GitHub 创建令牌", onClick = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/settings/tokens/new")))
+                        }) {
+                            Icon(painterResource(R.drawable.ic_github), contentDescription = "在 GitHub 创建令牌")
+                        }
+                    },
+                )
+                InkField(owner, { owner = it }, "仓库所有者")
+                InkField(repo, { repo = it }, "仓库名")
+                InkField(branch, { branch = it }, "分支")
+                InkField(posts, { posts = it }, "文章目录")
+            }
+        }
+        InkGroup("站点") {
+            run {
+                InkSegment(
+                    options = listOf("Hexo", "Astro"),
+                    selected = if (engine == SiteEngine.Astro) 1 else 0,
+                    onSelect = { index ->
+                        if (index == 0) {
+                            engine = SiteEngine.Hexo
+                            if (imageMode == ImageMode.Assets) imageMode = ImageMode.PostFolder
+                        } else {
+                            engine = SiteEngine.Astro
+                            imageMode = ImageMode.Assets
+                        }
+                    },
+                )
+                if (engine == SiteEngine.Hexo) {
+                    Text("图片放在哪", color = Muted, style = MiuixTheme.textStyles.footnote1)
+                    InkSegment(
+                        options = listOf("跟文章放在一起", "站点图片目录"),
+                        selected = if (imageMode == ImageMode.SourceImages) 1 else 0,
+                        onSelect = { imageMode = if (it == 1) ImageMode.SourceImages else ImageMode.PostFolder },
+                    )
+                    if (imageMode == ImageMode.SourceImages) {
+                        InkField(
+                            imageDirectory,
+                            { imageDirectory = it },
+                            "图片目录",
+                            supporting = "须在 source/ 下，正文写成 /" + HexoPaths.normalizeImageDirectory(imageDirectory).removePrefix("source/") + "/文件名",
+                        )
                     }
-                },
-            )
-            OutlinedTextField(owner, { owner = it }, label = { Text("仓库所有者") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(repo, { repo = it }, label = { Text("仓库名") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(branch, { branch = it }, label = { Text("分支") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(posts, { posts = it }, label = { Text("文章目录") }, modifier = Modifier.fillMaxWidth())
-            Text("站点", modifier = Modifier.padding(top = 8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(
-                    selected = engine == SiteEngine.Hexo,
-                    onClick = {
-                        engine = SiteEngine.Hexo
-                        if (imageMode == ImageMode.Assets) imageMode = ImageMode.PostFolder
-                    },
-                )
-                Text("Hexo")
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(
-                    selected = engine == SiteEngine.Astro,
-                    onClick = {
-                        engine = SiteEngine.Astro
-                        imageMode = ImageMode.Assets
-                    },
-                )
-                Text("Astro")
-            }
-            if (engine == SiteEngine.Hexo) {
-                Text("图片放在哪", modifier = Modifier.padding(top = 8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = imageMode == ImageMode.PostFolder, onClick = { imageMode = ImageMode.PostFolder })
-                    Text("跟文章放在一起")
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = imageMode == ImageMode.SourceImages, onClick = { imageMode = ImageMode.SourceImages })
-                    Text("放进站点图片目录")
-                }
-                if (imageMode == ImageMode.SourceImages) {
-                    OutlinedTextField(
-                        imageDirectory,
-                        { imageDirectory = it },
-                        label = { Text("图片目录") },
-                        supportingText = {
-                            Text("须在 source/ 下，正文写成 /" + HexoPaths.normalizeImageDirectory(imageDirectory).removePrefix("source/") + "/文件名")
-                        },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
+                    InkField(
+                        seriesIndexKey,
+                        { seriesIndexKey = it },
+                        "系列序号字段，可不填",
+                        supporting = "主题用来排序的字段，如 series_index。留空则不自动编号",
+                    )
+                } else {
+                    InkField(
+                        assetsDirectory,
+                        { assetsDirectory = it },
+                        "图片目录",
+                        supporting = "正文写成从文章到 " + HexoPaths.normalizeAssetsDirectory(assetsDirectory) + " 的相对路径",
+                    )
+                    InkField(
+                        seriesFile,
+                        { seriesFile = it },
+                        "专栏名单",
+                        supporting = "默认 " + SiteDefaults.SERIES_FILE + "。文章里的专栏名必须是其中的顶层键，序号留空则自动接在最后",
                     )
                 }
-                OutlinedTextField(
-                    seriesIndexKey,
-                    { seriesIndexKey = it },
-                    label = { Text("系列序号字段，可不填") },
-                    supportingText = { Text("主题用来排序的字段，如 series_index。留空则不自动编号") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            } else {
-                OutlinedTextField(
-                    assetsDirectory,
-                    { assetsDirectory = it },
-                    label = { Text("图片目录") },
-                    supportingText = { Text("正文写成从文章到 " + HexoPaths.normalizeAssetsDirectory(assetsDirectory) + " 的相对路径") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    seriesFile,
-                    { seriesFile = it },
-                    label = { Text("专栏名单") },
-                    supportingText = { Text("默认 " + SiteDefaults.SERIES_FILE + "。文章里的专栏名必须是其中的顶层键，序号留空则自动接在最后") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("发布后触发自动构建", modifier = Modifier.weight(1f))
-                Switch(checked = autoBuild, onCheckedChange = { autoBuild = it })
-            }
-            OutlinedTextField(workflow, { workflow = it }, label = { Text("工作流文件名") }, modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(24.dp))
         }
+        InkGroup("发布", padded = false) {
+            SwitchPreference(
+                title = "发布后触发自动构建",
+                checked = autoBuild,
+                onCheckedChange = { autoBuild = it },
+            )
+            FormColumn {
+                InkField(workflow, { workflow = it }, "工作流文件名")
+            }
+        }
+        } }
     }
+}
+
+/** 卡片里的一叠输入框。 */
+@Composable
+private fun FormColumn(content: @Composable () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) { content() }
 }

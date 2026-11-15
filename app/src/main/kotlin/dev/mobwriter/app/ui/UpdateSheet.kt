@@ -1,5 +1,10 @@
 package dev.mobwriter.app.ui
 
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,14 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -141,7 +138,6 @@ internal fun UpdateHost(content: @Composable () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun UpdateOfferSheet(
     updater: AppUpdater,
@@ -150,7 +146,6 @@ private fun UpdateOfferSheet(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var progress by remember { mutableFloatStateOf(0f) }
     var downloading by remember { mutableStateOf(false) }
     var file by remember { mutableStateOf<File?>(null) }
@@ -168,28 +163,28 @@ private fun UpdateOfferSheet(
             }
         }
     }
-    ModalBottomSheet(onDismissRequest = { if (!downloading) onDismiss() }, sheetState = sheet) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp),
-        ) {
-            Text("发现新版本 ${choice.versionName}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Text("来源：GitHub", color = Muted, modifier = Modifier.padding(top = 6.dp))
+    InkBottomSheet(
+        show = true,
+        title = "发现新版本 ${choice.versionName}",
+        onDismiss = onDismiss,
+        allowDismiss = !downloading,
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Text("来源：GitHub", color = Muted)
             if (choice.notes.isNotBlank()) {
                 Text(choice.notes.trim(), modifier = Modifier.padding(top = 12.dp))
             }
             if (downloading) {
                 LinearProgressIndicator(
-                    progress = { progress },
+                    progress = progress,
                     modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                    color = Cinnabar,
                 )
             }
             error?.let { Text(it, color = Cinnabar, modifier = Modifier.padding(top = 8.dp)) }
             val ready = file
-            Button(
+            TextButton(
+                text = if (ready != null) "安装" else if (downloading) "正在下载" else "立即更新",
+                colors = ButtonDefaults.textButtonColorsPrimary(),
                 onClick = {
                     when (AppUpdate.directInstallStep(updater.canInstallPackages(), askedPermission)) {
                         DirectInstallStep.AskPermission -> {
@@ -201,7 +196,7 @@ private fun UpdateOfferSheet(
                         DirectInstallStep.Download -> {
                             if (ready != null) {
                                 updater.install(ready)
-                                return@Button
+                                return@TextButton
                             }
                             downloading = true
                             error = null
@@ -229,33 +224,34 @@ private fun UpdateOfferSheet(
                 },
                 enabled = !downloading,
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-            ) {
-                Text(if (ready != null) "安装" else if (downloading) "正在下载" else "立即更新")
-            }
-            TextButton(onClick = { updater.openPage(choice.pageUrl) }, modifier = Modifier.fillMaxWidth()) {
-                Text("打开发布页")
-            }
-            TextButton(onClick = onDismiss, enabled = !downloading, modifier = Modifier.fillMaxWidth()) {
-                Text("稍后")
-            }
-            Spacer(Modifier.windowInsetsBottomHeight(androidx.compose.foundation.layout.WindowInsets.navigationBars))
+            )
+            TextButton(
+                text = "打开发布页",
+                onClick = { updater.openPage(choice.pageUrl) },
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            )
+            TextButton(
+                text = "稍后",
+                onClick = onDismiss,
+                enabled = !downloading,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            )
             Spacer(Modifier.height(8.dp))
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NotesSheet(title: String, body: String, confirm: String, onConfirm: () -> Unit) {
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(onDismissRequest = onConfirm, sheetState = sheet) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
-            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Text(body, modifier = Modifier.padding(top = 12.dp))
-            Button(onClick = onConfirm, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
-                Text(confirm)
-            }
-            Spacer(Modifier.windowInsetsBottomHeight(androidx.compose.foundation.layout.WindowInsets.navigationBars))
+    InkBottomSheet(show = true, title = title, onDismiss = onConfirm) {
+        Column(Modifier.fillMaxWidth()) {
+            Text(body)
+            TextButton(
+                text = confirm,
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColorsPrimary(),
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            )
             Spacer(Modifier.height(8.dp))
         }
     }

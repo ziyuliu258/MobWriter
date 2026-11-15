@@ -8,6 +8,7 @@ import dev.mobwriter.app.core.model.BlogException
 import dev.mobwriter.app.core.model.BlogSettings
 import dev.mobwriter.app.core.model.BuildStatus
 import dev.mobwriter.app.core.model.PostDocument
+import dev.mobwriter.app.core.model.searchText
 import dev.mobwriter.app.core.model.PostSummary
 import dev.mobwriter.app.core.model.PublishReport
 import dev.mobwriter.app.core.model.SiteDefaults
@@ -30,12 +31,18 @@ class BlogService(
     val settings: BlogSettings,
     private val readLocal: (String) -> ByteArray = { File(it).readBytes() },
 ) {
-    fun listPosts(): List<PostSummary> = runBlocking {
+    /**
+     * 列出文章。[known] 是上次的结果：目录里 sha 没变的文章直接沿用，只下载新增和改过的，
+     * 平常刷新只花一次目录请求。
+     */
+    fun listPosts(known: List<PostSummary> = emptyList()): List<PostSummary> = runBlocking {
         val entries = github.listDirectory(settings.owner, settings.repo, settings.postsPath, settings.branch)
+        val cached = known.associateBy { it.path }
         coroutineScope {
             entries.filter { it.type == "file" && it.name.endsWith(".md") }
                 .map { entry ->
                     async(Dispatchers.IO) {
+                        cached[entry.path]?.takeIf { it.sha == entry.sha && entry.sha.isNotBlank() }?.let { return@async it }
                         runCatching { summaryOf(entry.path, entry.sha) }.getOrElse {
                             PostSummary(entry.path, entry.sha, entry.name.removeSuffix(".md"), "", emptyList(), emptyList())
                         }
@@ -155,6 +162,7 @@ class BlogService(
                 SiteEngine.Astro -> document.seriesIndex
                 SiteEngine.Hexo -> SeriesIndex.read(document, settings.seriesIndexKey)
             },
+            plain = document.blocks.joinToString("\n") { it.searchText() },
         )
     }
 
@@ -180,6 +188,7 @@ class BlogService(
             SeriesCatalog.requireKnown(series, readOptionalText(file), file)
         }
         return document.copy(
+            uuid = document.uuid.ifBlank { java.util.UUID.randomUUID().toString() },
             aplayer = false,
             top = false,
             sticky = null,

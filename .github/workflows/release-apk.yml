@@ -86,7 +86,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -97,7 +97,7 @@ jobs:
       - name: Install Android SDK packages
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager "platforms;android-37" "build-tools;36.0.0"
 
       - name: Run repository tests
         run: ./gradlew :core:test :app:test :app:lintDebug --build-cache
@@ -159,7 +159,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       - name: Setup Gradle
         if: steps.gate.outputs.skip != 'true'
@@ -173,7 +173,7 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager "platforms;android-37" "build-tools;36.0.0"
 
       - name: Require stable signing
         if: steps.gate.outputs.skip != 'true'

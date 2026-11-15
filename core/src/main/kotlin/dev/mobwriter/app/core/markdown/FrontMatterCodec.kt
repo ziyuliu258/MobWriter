@@ -5,7 +5,7 @@ import dev.mobwriter.app.core.model.PostDocument
 object FrontMatterCodec {
     private val keyPattern = Regex("""^([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)$""")
     private val known = setOf(
-        "title", "date", "tags", "categories", "catagories", "series", "series_index",
+        "title", "date", "author", "uuid", "tags", "categories", "catagories", "series", "series_index",
         "aplayer", "top", "pinned", "sticky", "abbrlink",
     )
 
@@ -57,6 +57,8 @@ object FrontMatterCodec {
         val lines = yaml.split('\n')
         var title = ""
         var date = ""
+        val authors = mutableListOf<String>()
+        var uuid = ""
         var tags = emptyList<String>()
         var categories = emptyList<String>()
         var categoryKey: String? = null
@@ -108,6 +110,16 @@ object FrontMatterCodec {
                     date = read.first
                     i = read.second
                 }
+                "author" -> {
+                    val read = readList(value, lines, i + 1)
+                    authors.clear()
+                    authors += read.first
+                    i = read.second
+                }
+                "uuid" -> {
+                    uuid = unquote(value.trim())
+                    i++
+                }
                 "series" -> {
                     val read = readScalar(value, lines, i + 1)
                     series = read.first.ifBlank { null }
@@ -157,6 +169,8 @@ object FrontMatterCodec {
         return PostDocument(
             title = title,
             date = date,
+            authors = authors.toList(),
+            uuid = uuid,
             tags = tags,
             categories = categories,
             categoryKey = categoryKey,
@@ -218,8 +232,17 @@ object FrontMatterCodec {
 
     private fun writeYaml(document: PostDocument): String {
         val lines = mutableListOf<String>()
+        if (document.uuid.isNotBlank()) lines += "uuid: ${document.uuid}"
         lines += "title: ${quote(document.title)}"
         if (document.date.isNotBlank()) lines += "date: ${document.date}"
+        when (document.authors.size) {
+            0 -> Unit
+            1 -> lines += "author: ${quote(document.authors[0])}"
+            else -> {
+                lines += "author:"
+                document.authors.forEach { lines += "  - ${quote(it)}" }
+            }
+        }
         if (document.tags.isNotEmpty() || document.hadTagsKey) {
             lines += "tags:"
             document.tags.forEach { lines += "  - ${quote(it)}" }

@@ -1,7 +1,6 @@
 package dev.mobwriter.app.ui
 
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -118,7 +117,7 @@ fun MarkupField(
             onValue(it)
         },
         textStyle = textStyle,
-        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        cursorBrush = SolidColor(Cinnabar),
         visualTransformation = remember(accent, secondary) {
             MarkdownVisualTransformation(accent, secondary, quiet, ground)
         },

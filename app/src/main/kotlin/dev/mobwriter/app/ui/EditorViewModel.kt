@@ -55,6 +55,10 @@ class EditorViewModel(
     var extras by mutableStateOf(listOf<String>())
     val tags = mutableStateListOf<String>()
     val categories = mutableStateListOf<String>()
+    /** 作者。一个人存成一行，多个人存成列表，写回时由编码器决定。 */
+    val authors = mutableStateListOf<String>()
+    /** 文章稳定标识。已有的原样保留，Astro 新建文章发布时补上。 */
+    var uuid by mutableStateOf("")
     val blocks = mutableStateListOf<EditorBlock>()
     var path by mutableStateOf<String?>(remotePath)
     var sha by mutableStateOf<String?>(null)
@@ -173,13 +177,15 @@ class EditorViewModel(
         val from = mode
         val blocksSnap = blocks.map { it.block }
         val sourceSnap = sourceText
+        val pendingSnap = pendingImages()
         mode = next
         switching = true
         viewModelScope.launch {
             try {
                 if (from == WriteMode.Source) {
+                    // 和 syncSource 同一条规则：还没上传的本地图片按文件名接回去，不然切一次模式就传不上去了
                     val parsed = withContext(Dispatchers.Default) {
-                        parseBlocks(sourceSnap).ifEmpty { listOf(Block.Paragraph("")) }
+                        withPending(parseBlocks(sourceSnap).ifEmpty { listOf(Block.Paragraph("")) }, pendingSnap)
                     }
                     blocks.clear()
                     parsed.forEach { blocks += EditorBlock(nextId(), it) }
@@ -346,6 +352,17 @@ class EditorViewModel(
 
     fun removeTag(value: String) {
         tags.remove(value)
+        scheduleSave()
+    }
+
+    fun addAuthor(value: String) {
+        val author = value.trim()
+        if (author.isNotEmpty() && author !in authors) authors += author
+        scheduleSave()
+    }
+
+    fun removeAuthor(value: String) {
+        authors.remove(value)
         scheduleSave()
     }
 
@@ -544,6 +561,9 @@ class EditorViewModel(
         tags.addAll(document.tags)
         categories.clear()
         categories.addAll(document.categories)
+        authors.clear()
+        authors.addAll(document.authors)
+        uuid = document.uuid
         path = document.path ?: remotePath
         sha = document.sha
         blocks.clear()
@@ -580,6 +600,8 @@ class EditorViewModel(
         append('\u0000')
         append(categories.joinToString("\u0001"))
         append('\u0000')
+        append(authors.joinToString("\u0001"))
+        append('\u0000')
         val body = if (mode == WriteMode.Source) sourceText else serializeBlocks(blocks.map { it.block })
         append(body.trimEnd())
     }
@@ -589,6 +611,8 @@ class EditorViewModel(
         sha = sha,
         title = title.trim(),
         date = date.ifBlank { HexoPaths.timestamp(blog.settings.engine) },
+        authors = authors.toList(),
+        uuid = uuid,
         tags = tags.toList(),
         categories = categories.toList(),
         categoryKey = categoryKey,
@@ -618,17 +642,22 @@ class EditorViewModel(
 
     private fun syncSource() {
         if (mode != WriteMode.Source) return
-        val pending = blocks.map { it.block }.filterIsInstance<Block.Image>().filter { !it.pendingFile.isNullOrBlank() }
-        val parsed = parseBlocks(sourceText).ifEmpty { listOf(Block.Paragraph("")) }.map { block ->
-            if (block is Block.Image) {
-                val match = pending.find { it.src.substringAfterLast('/') == block.src.substringAfterLast('/') }
-                if (match != null) block.copy(pendingFile = match.pendingFile, alt = block.alt.ifBlank { match.alt }) else block
-            } else {
-                block
-            }
-        }
+        val parsed = withPending(parseBlocks(sourceText).ifEmpty { listOf(Block.Paragraph("")) }, pendingImages())
         blocks.clear()
         parsed.forEach { blocks += EditorBlock(nextId(), it) }
+    }
+
+    private fun pendingImages(): List<Block.Image> =
+        blocks.map { it.block }.filterIsInstance<Block.Image>().filter { !it.pendingFile.isNullOrBlank() }
+
+    /** 源码里解析出来的图片按文件名接回还没上传的本地文件。 */
+    private fun withPending(parsed: List<Block>, pending: List<Block.Image>): List<Block> = parsed.map { block ->
+        if (block is Block.Image) {
+            val match = pending.find { it.src.substringAfterLast('/') == block.src.substringAfterLast('/') }
+            if (match != null) block.copy(pendingFile = match.pendingFile, alt = block.alt.ifBlank { match.alt }) else block
+        } else {
+            block
+        }
     }
 
     private fun insertSource(snippet: String) {

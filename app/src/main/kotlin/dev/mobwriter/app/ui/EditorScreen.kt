@@ -1,8 +1,24 @@
 package dev.mobwriter.app.ui
 
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
+import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import top.yukonga.miuix.kmp.basic.Surface
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TooltipBox
+import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.LocalOffer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
+import dev.mobwriter.app.core.model.PostListing
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.draw.drawBehind
@@ -71,31 +87,10 @@ import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.PlainTooltip
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.InputChip
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SuggestionChip
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -126,7 +121,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun EditorScreen(
     viewModel: EditorViewModel,
@@ -135,11 +130,17 @@ fun EditorScreen(
     suggestedCategories: List<String>,
     onBack: () -> Unit,
     onPickImage: () -> Unit,
+    onPublished: () -> Unit = {},
 ) {
     val articleStep = LocalAppearance.current.article
-    val body = articleBodyStyle(articleStep).copy(color = MaterialTheme.colorScheme.onBackground)
-    val titleStyle = articleTitleStyle(articleStep).copy(color = MaterialTheme.colorScheme.onBackground)
-    var meta by remember { mutableStateOf(viewModel.path == null) }
+    val body = articleBodyStyle(articleStep, LocalAppearance.current.articleFont).copy(color = Ink)
+    val titleStyle = articleTitleStyle(articleStep, LocalAppearance.current.articleFont).copy(color = Ink)
+    var metaOpen by remember { mutableStateOf(false) }
+    var moreOpen by remember { mutableStateOf(false) }
+    var confirmRestore by remember { mutableStateOf(false) }
+    // 阅读键切回去时回到进阅读前的写法
+    var lastWriting by remember { mutableStateOf(WriteMode.Wysiwyg) }
+    if (viewModel.mode != WriteMode.Reading) lastWriting = viewModel.mode
     var visitUrl by remember { mutableStateOf<String?>(null) }
     var linkOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -161,7 +162,7 @@ fun EditorScreen(
     }
     Box(Modifier.fillMaxSize()) {
     if (viewModel.loading) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Cinnabar) }
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { InfiniteProgressIndicator(color = Cinnabar) }
         return
     }
     viewModel.error?.let { message ->
@@ -170,31 +171,76 @@ fun EditorScreen(
                 AppIconButton("返回", onClick = onBack) {
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
                 }
-                Text(message, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                Text(message, style = MiuixTheme.textStyles.title4, modifier = Modifier.weight(1f))
             }
         }
         return
     }
+    val listState = rememberLazyListState()
+    val barOutline = rememberBarOutline(listState)
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         topBar = {
-            TopAppBar(
-                    title = {},
+            val showTitle by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
+            SmallTopAppBar(
+                    title = if (showTitle || viewModel.mode == WriteMode.Reading) viewModel.title.ifBlank { "无题" } else "",
                     navigationIcon = {
-                        AppIconButton("返回", onClick = { leave() }) {
-                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                        ProvideBarOutline(barOutline) {
+                            AppIconButton("返回", onClick = { leave() }) {
+                                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                            }
                         }
                     },
-                    actions = {
-                        AppIconButton("存草稿", onClick = { viewModel.saveDraftCopy() }) {
-                            Icon(Icons.Outlined.Save, contentDescription = "存草稿")
+                    actions = { ProvideBarOutline(barOutline) { Row {
+                        val reading = viewModel.mode == WriteMode.Reading
+                        AppIconButton(
+                            if (reading) "继续写" else "阅读",
+                            onClick = { viewModel.switchMode(if (reading) lastWriting else WriteMode.Reading) },
+                        ) {
+                            Icon(if (reading) Icons.Outlined.Edit else Icons.Outlined.MenuBook, contentDescription = if (reading) "继续写" else "阅读")
+                        }
+                        AppIconMenu(
+                            expanded = moreOpen,
+                            onExpandedChange = { moreOpen = it },
+                            label = "更多",
+                            icon = { Icon(Icons.Outlined.MoreVert, contentDescription = "更多") },
+                        ) {
+                            AppDropdownSubMenu(title = "写法", summary = modeLabel(viewModel.mode)) {
+                                WriteMode.entries.forEach { mode ->
+                                    AppDropdownOption(modeLabel(mode), selected = viewModel.mode == mode) {
+                                        moreOpen = false
+                                        viewModel.switchMode(mode)
+                                    }
+                                }
+                            }
+                            AppDropdownMenuItem(
+                                text = { Text("文章信息") },
+                                leadingIcon = { Icon(Icons.Outlined.LocalOffer, contentDescription = null, tint = Muted) },
+                                onClick = { moreOpen = false; metaOpen = true },
+                            )
+                            AppDropdownMenuItem(
+                                text = { Text("存草稿") },
+                                leadingIcon = { Icon(Icons.Outlined.Save, contentDescription = null, tint = Muted) },
+                                onClick = { moreOpen = false; viewModel.saveDraftCopy() },
+                            )
+                            if (viewModel.fromLocal && viewModel.path != null) {
+                                AppDropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text("改回线上版本")
+                                            Text("丢掉手机上未发布的修改", color = Muted, style = MiuixTheme.textStyles.footnote1)
+                                        }
+                                    },
+                                    leadingIcon = { Icon(Icons.Outlined.Restore, contentDescription = null, tint = Muted) },
+                                    onClick = { moreOpen = false; confirmRestore = true },
+                                )
+                            }
                         }
                         AppIconButton("发布", onClick = { viewModel.publish(asDraft = false) }, tint = Cinnabar) {
                             Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = "发布")
                         }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                    } } },
                 )
         },
         bottomBar = {
@@ -220,17 +266,11 @@ fun EditorScreen(
             }
         },
     ) { padding ->
-        val listState = rememberLazyListState()
         LaunchedEffect(viewModel.activeId, viewModel.mode, viewModel.switching) {
             if (viewModel.mode != WriteMode.Typewriter || viewModel.switching) return@LaunchedEffect
             val index = viewModel.blocks.indexOfFirst { it.id == viewModel.activeId }
             if (index < 0) return@LaunchedEffect
-            var header = 1
-            if (viewModel.fromLocal && viewModel.path != null) header++
-            if (viewModel.mode != WriteMode.Reading) {
-                header += 2
-                if (meta) header++
-            }
+            val header = if (viewModel.mode != WriteMode.Reading) 2 else 0
             val viewport = listState.layoutInfo.viewportSize.height
             listState.animateScrollToItem((header + index).coerceAtLeast(0), scrollOffset = -(viewport / 3))
         }
@@ -239,16 +279,6 @@ fun EditorScreen(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp),
             contentPadding = PaddingValues(vertical = 8.dp),
         ) {
-            if (viewModel.fromLocal && viewModel.path != null) {
-                item {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("未发布的修改", color = Muted, modifier = Modifier.weight(1f))
-                        AppIconButton("改回线上版本", onClick = viewModel::reloadRemote) {
-                            Icon(Icons.Outlined.Restore, contentDescription = "改回线上版本")
-                        }
-                    }
-                }
-            }
             if (viewModel.mode != WriteMode.Reading) {
                 item {
                     BasicTextField(
@@ -264,25 +294,14 @@ fun EditorScreen(
                     )
                 }
                 item {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            viewModel.date.ifBlank { "发布时写入现在的时间" },
-                            color = Muted,
-                            modifier = Modifier.weight(1f),
-                        )
-                        AppIconButton("分类、标签和系列", onClick = { meta = !meta }) {
-                            Icon(Icons.Outlined.MoreVert, contentDescription = "分类、标签和系列")
-                        }
-                    }
-                    if (meta) MetaEditor(viewModel, suggestedTags, suggestedCategories)
+                    MetaSummary(viewModel) { metaOpen = true }
                 }
             }
-            item { ModeBar(viewModel.mode, viewModel::switchMode) }
-            item { Spacer(Modifier.height(8.dp)) }
+            item { Spacer(Modifier.height(12.dp)) }
             if (viewModel.switching) {
                 item {
                     Box(Modifier.fillMaxWidth().height(280.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Cinnabar)
+                        InfiniteProgressIndicator(color = Cinnabar)
                     }
                 }
             } else when (viewModel.mode) {
@@ -299,7 +318,7 @@ fun EditorScreen(
                     }
                 }
                 else -> items(viewModel.blocks, key = { it.id }) { item ->
-                    val requester = focusRequesters.getOrPut(item.id) { FocusRequester() }
+                    val requester = remember(item.id) { focusRequesters.getOrPut(item.id) { FocusRequester() } }
                     val dim = viewModel.mode == WriteMode.Typewriter &&
                         viewModel.activeId != null &&
                         viewModel.activeId != item.id
@@ -319,81 +338,87 @@ fun EditorScreen(
             }
         }
     }
+    MetaSheet(
+        show = metaOpen,
+        viewModel = viewModel,
+        suggestedTags = suggestedTags,
+        suggestedCategories = suggestedCategories,
+        onDismiss = { metaOpen = false },
+    )
+    if (confirmRestore) {
+        InkSheet(
+            onDismiss = { confirmRestore = false },
+            title = "改回线上版本？",
+            primary = "改回",
+            onPrimary = {
+                confirmRestore = false
+                viewModel.reloadRemote()
+            },
+        ) { Text("手机上还没发布的修改会被丢掉，换成仓库里现在的版本。") }
+    }
     if (linkOpen) {
-        AlertDialog(
-            onDismissRequest = { linkOpen = false },
-            title = { Text("插入链接") },
-            text = {
-                Column {
-                    OutlinedTextField(linkLabel, { linkLabel = it }, label = { Text("显示的文字") }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(linkUrl, { linkUrl = it }, label = { Text("地址") }, modifier = Modifier.fillMaxWidth())
-                }
+        InkSheet(
+            onDismiss = { linkOpen = false },
+            title = "插入链接",
+            primary = "插入",
+            onPrimary = {
+                viewModel.insertLink(linkLabel, linkUrl)
+                linkOpen = false
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.insertLink(linkLabel, linkUrl)
-                    linkOpen = false
-                }) { Text("插入") }
-            },
-            dismissButton = { TextButton(onClick = { linkOpen = false }) { Text("取消") } },
-        )
+        ) {
+            InkField(linkLabel, { linkLabel = it }, "显示的文字")
+            InkField(linkUrl, { linkUrl = it }, "地址", modifier = Modifier.padding(top = 8.dp))
+        }
     }
     if (confirmLeave) {
-        AlertDialog(
-            onDismissRequest = { confirmLeave = false },
-            title = { Text("保存更改？") },
-            text = { Text("返回前要不要留下这些修改？") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmLeave = false
-                    viewModel.saveNow()
-                    onBack()
-                }) { Text("保存") }
+        InkSheet(
+            onDismiss = { confirmLeave = false },
+            title = "保存更改？",
+            primary = "保存",
+            onPrimary = {
+                confirmLeave = false
+                viewModel.saveNow()
+                onBack()
             },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = { confirmLeave = false }) { Text("取消") }
-                    TextButton(onClick = {
-                        confirmLeave = false
-                        viewModel.discardSession()
-                        onBack()
-                    }) { Text("不保存") }
-                }
+            secondary = "不保存",
+            onSecondary = {
+                confirmLeave = false
+                viewModel.discardSession()
+                onBack()
             },
-        )
+        ) { Text("返回前要不要留下这些修改？") }
     }
     if (visitUrl != null) {
-        AlertDialog(
-            onDismissRequest = { visitUrl = null },
-            title = { Text("要打开这个链接吗？") },
-            text = { Text(visitUrl.orEmpty()) },
-            confirmButton = {
-                TextButton(onClick = {
-                    val url = visitUrl
-                    visitUrl = null
-                    if (!url.isNullOrBlank()) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                }) { Text("访问") }
+        InkSheet(
+            onDismiss = { visitUrl = null },
+            title = "要打开这个链接吗？",
+            primary = "访问",
+            onPrimary = {
+                val url = visitUrl
+                visitUrl = null
+                if (!url.isNullOrBlank()) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
             },
-            dismissButton = { TextButton(onClick = { visitUrl = null }) { Text("取消") } },
-        )
+        ) { Text(visitUrl.orEmpty()) }
     }
     viewModel.notice?.let { notice ->
-        AlertDialog(
-            onDismissRequest = { viewModel.notice = null },
-            title = { Text(notice.title) },
-            text = { Text(notice.body) },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.notice = null
-                    if (notice.finished) onBack()
-                }) { Text("好") }
+        InkSheet(
+            onDismiss = { viewModel.notice = null },
+            title = notice.title,
+            primary = "好",
+            onPrimary = {
+                viewModel.notice = null
+                if (notice.finished) {
+                    onPublished()
+                    onBack()
+                }
             },
-        )
+            dismiss = null,
+        ) { Text(notice.body) }
     }
     if (viewModel.busy != null) {
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(color = Color.White)
+                InfiniteProgressIndicator(color = Color.White)
                 Text(viewModel.busy.orEmpty(), color = Color.White, modifier = Modifier.padding(top = 12.dp))
             }
         }
@@ -401,101 +426,181 @@ fun EditorScreen(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/** 标题下的一行：日期和这篇的归类摘要。点一下打开文章信息。 */
 @Composable
-private fun MetaEditor(
+private fun MetaSummary(viewModel: EditorViewModel, onOpen: () -> Unit) {
+    val date = viewModel.date.takeIf { it.isNotBlank() }?.let { PostListing.dateLabel(it, -1) } ?: "发布时写入现在的时间"
+    val parts = buildList {
+        addAll(viewModel.authors)
+        addAll(viewModel.categories)
+        addAll(viewModel.tags.map { "#$it" })
+        viewModel.series.trim().takeIf { it.isNotEmpty() }?.let { add(it) }
+    }
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(date, color = Muted, style = MiuixTheme.textStyles.footnote1)
+                if (viewModel.fromLocal && viewModel.path != null) {
+                    Text("  ·  有未发布的修改", color = Cinnabar, style = MiuixTheme.textStyles.footnote1)
+                }
+            }
+            Text(
+                parts.joinToString("  ·  ").ifEmpty { "添加作者、分类和标签" },
+                color = if (parts.isEmpty()) MiuixTheme.colorScheme.onSurfaceVariantActions else Muted,
+                style = MiuixTheme.textStyles.footnote1,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
+
+/** 文章信息：作者、分类、标签、专栏和其他 Front-matter，全收在一张底部弹窗里。 */
+@Composable
+private fun MetaSheet(
+    show: Boolean,
     viewModel: EditorViewModel,
     suggestedTags: List<String>,
     suggestedCategories: List<String>,
+    onDismiss: () -> Unit,
 ) {
-    var tagDraft by remember { mutableStateOf("") }
-    var categoryDraft by remember { mutableStateOf("") }
-    Text("分类", color = Muted)
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        viewModel.categories.forEach { category ->
-            InputChip(selected = true, onClick = { viewModel.removeCategory(category) }, label = { Text(category) })
-        }
-        suggestedCategories.filter { it !in viewModel.categories }.take(12).forEach { category ->
-            SuggestionChip(onClick = { viewModel.addCategory(category) }, label = { Text(category) })
-        }
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        OutlinedTextField(categoryDraft, { categoryDraft = it }, label = { Text("新分类") }, modifier = Modifier.weight(1f))
-        AppIconButton("添加分类", onClick = { viewModel.addCategory(categoryDraft); categoryDraft = "" }) {
-            Icon(Icons.Outlined.Add, contentDescription = "添加分类")
-        }
-    }
-    Text("标签", color = Muted, modifier = Modifier.padding(top = 8.dp))
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        viewModel.tags.forEach { tag ->
-            InputChip(selected = true, onClick = { viewModel.removeTag(tag) }, label = { Text(tag) })
-        }
-        suggestedTags.filter { it !in viewModel.tags }.take(16).forEach { tag ->
-            SuggestionChip(onClick = { viewModel.addTag(tag) }, label = { Text(tag) })
-        }
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        OutlinedTextField(tagDraft, { tagDraft = it }, label = { Text("新标签") }, modifier = Modifier.weight(1f))
-        AppIconButton("添加标签", onClick = { viewModel.addTag(tagDraft); tagDraft = "" }) {
-            Icon(Icons.Outlined.Add, contentDescription = "添加标签")
-        }
-    }
     val astro = viewModel.engine == SiteEngine.Astro
-    OutlinedTextField(
-        viewModel.series,
-        { viewModel.series = it },
-        label = { Text(if (astro) "专栏，可不填" else "系列，可不填") },
-        supportingText = if (astro) {
-            { Text("名字要已经写在专栏名单里") }
-        } else {
-            null
-        },
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-    )
-    if (astro) {
-        OutlinedTextField(
-            viewModel.seriesIndexText,
-            { viewModel.seriesIndexText = it },
-            label = { Text("专栏序号，可不填") },
-            supportingText = { Text("留空则发布时接在同专栏最后") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-        )
-    }
-    if (viewModel.path == null) {
-        OutlinedTextField(
-            viewModel.slug,
-            { viewModel.slug = it },
-            label = { Text("文件名，可不填") },
-            supportingText = { Text("用来做链接。不填就按标题生成") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-        )
-    }
-    OutlinedTextField(
-        viewModel.extrasText,
-        { viewModel.extrasText = it },
-        label = { Text("其他字段") },
-        supportingText = { Text(if (astro) "如 toc: true、description: 导语" else "主题或插件字段，原样写进 Front-matter") },
-        textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace),
-        minLines = 2,
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-    )
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-        Text("置顶", modifier = Modifier.weight(1f))
-        if (astro) {
-            Switch(checked = viewModel.pinned, onCheckedChange = { viewModel.pinned = it })
-        } else {
-            Switch(checked = viewModel.top, onCheckedChange = { viewModel.top = it })
+    InkBottomSheet(show = show, title = "文章信息", onDismiss = onDismiss) {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            MetaChips(
+                title = "作者",
+                chosen = viewModel.authors,
+                suggestions = emptyList(),
+                placeholder = "添加作者",
+                onAdd = viewModel::addAuthor,
+                onRemove = viewModel::removeAuthor,
+            )
+            MetaChips(
+                title = "分类",
+                chosen = viewModel.categories,
+                suggestions = suggestedCategories.filter { it !in viewModel.categories }.take(12),
+                placeholder = "新分类",
+                onAdd = viewModel::addCategory,
+                onRemove = viewModel::removeCategory,
+            )
+            MetaChips(
+                title = "标签",
+                chosen = viewModel.tags,
+                suggestions = suggestedTags.filter { it !in viewModel.tags }.take(16),
+                placeholder = "新标签",
+                onAdd = viewModel::addTag,
+                onRemove = viewModel::removeTag,
+            )
+            InkField(
+                viewModel.series,
+                { viewModel.series = it },
+                if (astro) "专栏，可不填" else "系列，可不填",
+                supporting = if (astro) "名字要已经写在专栏名单里" else "",
+            )
+            if (astro) {
+                InkField(
+                    viewModel.seriesIndexText,
+                    { viewModel.seriesIndexText = it },
+                    "专栏序号，可不填",
+                    supporting = "留空则发布时接在同专栏最后",
+                )
+            }
+            if (viewModel.path == null) {
+                InkField(
+                    viewModel.slug,
+                    { viewModel.slug = it },
+                    "文件名，可不填",
+                    supporting = "用来做链接。不填就按标题生成",
+                )
+            }
+            InkField(
+                viewModel.extrasText,
+                { viewModel.extrasText = it },
+                "其他字段",
+                supporting = if (astro) "如 toc: true、description: 导语" else "主题或插件字段，原样写进 Front-matter",
+                singleLine = false,
+            )
+            Column {
+                if (astro) {
+                    SwitchPreference(title = "置顶", checked = viewModel.pinned, onCheckedChange = { viewModel.pinned = it })
+                } else {
+                    SwitchPreference(title = "置顶", checked = viewModel.top, onCheckedChange = { viewModel.top = it })
+                    SwitchPreference(title = "音乐播放器", checked = viewModel.aplayer, onCheckedChange = { viewModel.aplayer = it })
+                }
+            }
+            val identity = when {
+                astro -> "uuid  " + viewModel.uuid.ifBlank { "发布时生成" }
+                !viewModel.abbrlink.isNullOrBlank() -> "固定链接  ${viewModel.abbrlink}"
+                else -> ""
+            }
+            if (identity.isNotEmpty()) {
+                Text(
+                    identity,
+                    color = Muted,
+                    style = MiuixTheme.textStyles.footnote1.copy(fontFamily = FontFamily.Monospace),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
         }
     }
-    if (!astro) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("音乐播放器", modifier = Modifier.weight(1f))
-            Switch(checked = viewModel.aplayer, onCheckedChange = { viewModel.aplayer = it })
+}
+
+/** 一类可增删的词：已选的是主色胶囊，点一下去掉；建议的是淡色胶囊，点一下加上。 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MetaChips(
+    title: String,
+    chosen: List<String>,
+    suggestions: List<String>,
+    placeholder: String,
+    onAdd: (String) -> Unit,
+    onRemove: (String) -> Unit,
+) {
+    var draft by remember { mutableStateOf("") }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, style = MiuixTheme.textStyles.headline2, color = Ink)
+        if (chosen.isNotEmpty() || suggestions.isNotEmpty()) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                chosen.forEach { word -> MetaChip(word, chosen = true) { onRemove(word) } }
+                suggestions.forEach { word -> MetaChip(word, chosen = false) { onAdd(word) } }
+            }
         }
-        if (!viewModel.abbrlink.isNullOrBlank()) {
-            Text("固定链接 ${viewModel.abbrlink}", color = Muted, modifier = Modifier.padding(top = 4.dp))
+        InkField(
+            draft,
+            { draft = it },
+            placeholder,
+            trailing = {
+                AppIconButton("添加$title", onClick = { onAdd(draft); draft = "" }, enabled = draft.isNotBlank()) {
+                    Icon(Icons.Outlined.Add, contentDescription = "添加$title")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun MetaChip(word: String, chosen: Boolean, onClick: () -> Unit) {
+    val ink = if (chosen) Cinnabar else Muted
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = if (chosen) MiuixTheme.colorScheme.tertiaryContainer else MiuixTheme.colorScheme.secondaryContainer,
+    ) {
+        Row(Modifier.padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(word, color = ink, style = MiuixTheme.textStyles.footnote1)
+            Icon(
+                if (chosen) Icons.Outlined.Close else Icons.Outlined.Add,
+                contentDescription = null,
+                tint = ink,
+                modifier = Modifier.padding(start = 4.dp).size(14.dp),
+            )
         }
     }
 }
@@ -512,7 +617,6 @@ private fun BlockCard(
     onLink: (String) -> Unit,
     formulas: FormulaBoard,
 ) {
-    var menu by remember { mutableStateOf(false) }
     val bring = remember { BringIntoViewRequester() }
     val focused = viewModel.activeId == item.id
     LaunchedEffect(focused, viewModel.mode) {
@@ -522,23 +626,42 @@ private fun BlockCard(
         if (showChrome) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(blockLabel(item.block), color = Muted, fontSize = uiSp(12f), modifier = Modifier.weight(1f))
-            Box {
-                AppIconButton("更多", onClick = { menu = true }) {
-                    Icon(Icons.Outlined.MoreVert, contentDescription = "更多")
-                }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("上移一段") }, onClick = { menu = false; viewModel.move(item.id, false) }, leadingIcon = { Icon(Icons.Outlined.KeyboardArrowUp, null) })
-                    DropdownMenuItem(text = { Text("下移一段") }, onClick = { menu = false; viewModel.move(item.id, true) }, leadingIcon = { Icon(Icons.Outlined.KeyboardArrowDown, null) })
-                    if (item.block is Block.Heading) {
-                        DropdownMenuItem(text = { Text("变成正文") }, onClick = { menu = false; viewModel.activeId = item.id; viewModel.convert("p") })
-                    } else if (item.block is Block.Paragraph) {
-                        DropdownMenuItem(text = { Text("变成标题") }, onClick = { menu = false; viewModel.activeId = item.id; viewModel.convert("h") })
-                    } else {
-                        DropdownMenuItem(text = { Text("变成正文") }, onClick = { menu = false; viewModel.activeId = item.id; viewModel.convert("p") })
+            var menu by remember { mutableStateOf(false) }
+            fun close(action: () -> Unit) {
+                menu = false
+                action()
+            }
+            AppIconMenu(
+                expanded = menu,
+                onExpandedChange = { menu = it },
+                label = "更多",
+                icon = { Icon(Icons.Outlined.MoreVert, contentDescription = "更多", tint = Muted) },
+            ) {
+                AppDropdownMenuItem(
+                    text = { Text("上移一段") },
+                    leadingIcon = { Icon(Icons.Outlined.KeyboardArrowUp, contentDescription = null, tint = Muted) },
+                    onClick = { close { viewModel.move(item.id, false) } },
+                )
+                AppDropdownMenuItem(
+                    text = { Text("下移一段") },
+                    leadingIcon = { Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = null, tint = Muted) },
+                    onClick = { close { viewModel.move(item.id, true) } },
+                )
+                AppDropdownSubMenu(title = "转换为", summary = blockLabel(item.block)) {
+                    AppDropdownOption("正文", selected = item.block is Block.Paragraph) {
+                        close { viewModel.activeId = item.id; viewModel.convert("p") }
                     }
-                    DropdownMenuItem(text = { Text("变成公式") }, onClick = { menu = false; viewModel.activeId = item.id; viewModel.convert("math") })
-                    DropdownMenuItem(text = { Text("删除") }, onClick = { menu = false; viewModel.delete(item.id) })
+                    AppDropdownOption("标题", selected = item.block is Block.Heading) {
+                        close { viewModel.activeId = item.id; viewModel.convert("h") }
+                    }
+                    AppDropdownOption("公式", selected = item.block is Block.Math) {
+                        close { viewModel.activeId = item.id; viewModel.convert("math") }
+                    }
                 }
+                AppDropdownMenuItem(
+                    text = { Text("删除", color = Cinnabar) },
+                    onClick = { close { viewModel.delete(item.id) } },
+                )
             }
         }
         }
@@ -583,13 +706,13 @@ private fun BlockCard(
             )
             is Block.Image -> ImageCard(block, viewModel.path, blog) { viewModel.updateImageAlt(item.id, it) }
             is Block.Table -> TableCard(item.id, block, viewModel, body)
-            is Block.Rule -> Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outline))
+            is Block.Rule -> Box(Modifier.fillMaxWidth().height(1.dp).background(MiuixTheme.colorScheme.dividerLine))
             is Block.Raw -> PlainBox(
                 label = "原样保留",
                 value = block.text,
                 placeholder = "",
                 monospace = true,
-                ground = MaterialTheme.colorScheme.surfaceVariant,
+                ground = MiuixTheme.colorScheme.secondaryContainer,
                 requester = requester,
                 onValue = { viewModel.onPlain(item.id, it) },
             )
@@ -709,7 +832,7 @@ private fun PlainBox(
                 fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Serif,
                 fontSize = articleSp(15f),
                 lineHeight = articleSp(22f),
-                color = MaterialTheme.colorScheme.onBackground,
+                color = Ink,
             ),
             cursorBrush = SolidColor(Cinnabar),
             modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(top = 8.dp).focusRequester(requester),
@@ -738,7 +861,7 @@ private fun ImageCard(image: Block.Image, postPath: String?, blog: BlogService, 
             bytes?.let { decodePreview(it) }
         }
     }
-    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp)).padding(12.dp)) {
+    Column(Modifier.fillMaxWidth().background(MiuixTheme.colorScheme.secondaryContainer, RoundedCornerShape(16.dp)).padding(12.dp)) {
         if (bitmap != null) {
             androidx.compose.foundation.Image(
                 bitmap = bitmap!!,
@@ -750,7 +873,7 @@ private fun ImageCard(image: Block.Image, postPath: String?, blog: BlogService, 
             Text(image.alt.ifBlank { "图片" }, modifier = Modifier.padding(vertical = 24.dp))
         }
         if (editable) {
-            OutlinedTextField(image.alt, onAlt, label = { Text("图片说明") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+            InkField(image.alt, onAlt, "图片说明", modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
         }
     }
 }
@@ -808,7 +931,7 @@ private fun FormatBar(
     Row(
         modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(Paper)
             .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 4.dp, vertical = 2.dp),
@@ -904,58 +1027,25 @@ private fun ReadOnlyBlock(
                 InlineRich("${index + 1}.  $item", style, formulas, onLink, Modifier.fillMaxWidth())
             }
         }
-        is Block.Code -> Text(block.code, style = style.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)).padding(12.dp))
+        is Block.Code -> Text(block.code, style = style.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.fillMaxWidth().background(MiuixTheme.colorScheme.secondaryContainer, RoundedCornerShape(12.dp)).padding(12.dp))
         is Block.Math -> FormulaImage(block.latex, display = true, board = formulas, style = style, modifier = Modifier.fillMaxWidth())
         is Block.Image -> ImageCard(block, postPath, blog, editable = false) {}
         is Block.Table -> Text(block.rows.joinToString("\n") { it.joinToString("  ") }, style = style)
-        is Block.Rule -> Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outline))
+        is Block.Rule -> Box(Modifier.fillMaxWidth().height(1.dp).background(MiuixTheme.colorScheme.dividerLine))
         is Block.Raw -> Text(block.text, style = style.copy(fontFamily = FontFamily.Monospace))
     }
 }
 
 @Composable
-private fun TypewriterMark() {
-    Canvas(Modifier.size(22.dp)) {
-        drawRoundRect(color = Color(0xFF1E1A16), topLeft = Offset(1f, size.height * 0.42f), size = Size(size.width - 2f, size.height * 0.48f), cornerRadius = CornerRadius(3f, 3f))
-        drawRect(color = Color(0xFFF6F1E7), topLeft = Offset(size.width * 0.18f, size.height * 0.12f), size = Size(size.width * 0.64f, size.height * 0.38f))
-        drawRect(color = Color(0xFF8E3B32), topLeft = Offset(size.width * 0.22f, size.height * 0.55f), size = Size(size.width * 0.12f, size.height * 0.12f))
-    }
-}
-
-@Composable
 private fun HeadingMark(level: Int) {
-    Text("H$level", fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = uiSp(13f), color = MaterialTheme.colorScheme.onSurface)
+    Text("H$level", fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = uiSp(13f), color = Ink)
 }
 
-@Composable
-private fun ModeBar(mode: WriteMode, onSelect: (WriteMode) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        ModeIcon(WriteMode.Wysiwyg, mode, onSelect, "所见即所得") { Icon(Icons.Outlined.Edit, null) }
-        ModeIcon(WriteMode.Source, mode, onSelect, "源代码") { Icon(Icons.Outlined.Code, null) }
-        ModeIcon(WriteMode.Reading, mode, onSelect, "阅读") { Icon(Icons.Outlined.MenuBook, null) }
-        ModeIcon(WriteMode.Typewriter, mode, onSelect, "打字机") { TypewriterMark() }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ModeIcon(target: WriteMode, current: WriteMode, onSelect: (WriteMode) -> Unit, label: String, icon: @Composable () -> Unit) {
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-        tooltip = { PlainTooltip { Text(label) } },
-        state = rememberTooltipState(),
-    ) {
-        IconButton(onClick = { onSelect(target) }) {
-            Box(
-                Modifier
-                    .background(if (target == current) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent, RoundedCornerShape(10.dp))
-                    .padding(4.dp),
-            ) { icon() }
-        }
-    }
+private fun modeLabel(mode: WriteMode): String = when (mode) {
+    WriteMode.Wysiwyg -> "所见即所得"
+    WriteMode.Source -> "源代码"
+    WriteMode.Reading -> "阅读"
+    WriteMode.Typewriter -> "打字机"
 }
 
 @Composable
@@ -990,17 +1080,17 @@ private fun ReadBlock(block: Block, postPath: String?, blog: BlogService, body: 
     when (block) {
         is Block.Paragraph -> StyledReadText(block.text, body)
         is Block.Heading -> StyledReadText(block.text, body.copy(fontSize = headingSize(block.level), fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold))
-        is Block.Quote -> Column(Modifier.border(3.dp, MaterialTheme.colorScheme.surfaceVariant).padding(start = 12.dp)) {
+        is Block.Quote -> Column(Modifier.border(3.dp, MiuixTheme.colorScheme.secondaryContainer).padding(start = 12.dp)) {
             block.alert?.let { Text(alertLabel(it), color = Cinnabar, fontSize = articleSp(12f)) }
             StyledReadText(block.text, body)
         }
         is Block.BulletList -> Column { block.items.forEach { StyledReadText("•  $it", body) } }
         is Block.OrderedList -> Column { block.items.forEachIndexed { index, item -> StyledReadText("${index + 1}.  $item", body) } }
-        is Block.Code -> Text(block.code, style = body.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)).padding(12.dp))
+        is Block.Code -> Text(block.code, style = body.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.fillMaxWidth().background(MiuixTheme.colorScheme.secondaryContainer, RoundedCornerShape(12.dp)).padding(12.dp))
         is Block.Math -> Text(block.latex, style = body.copy(fontFamily = FontFamily.Monospace, color = Moss), modifier = Modifier.fillMaxWidth().background(FormulaGround, RoundedCornerShape(12.dp)).padding(12.dp))
         is Block.Image -> ImageCard(block, postPath, blog, editable = false) {}
         is Block.Table -> Text(block.header.joinToString("  ") + "\n" + block.rows.joinToString("\n") { it.joinToString("  ") }, style = body)
-        is Block.Rule -> Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outline))
+        is Block.Rule -> Box(Modifier.fillMaxWidth().height(1.dp).background(MiuixTheme.colorScheme.dividerLine))
         is Block.Raw -> Text(block.text, style = body.copy(fontFamily = FontFamily.Monospace))
     }
 }

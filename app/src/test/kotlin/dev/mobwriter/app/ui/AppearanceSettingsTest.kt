@@ -1,5 +1,6 @@
 package dev.mobwriter.app.ui
 
+import androidx.compose.runtime.remember
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.runtime.getValue
@@ -34,7 +35,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], qualifiers = "w360dp-h640dp-xxhdpi")
+@Config(sdk = [35], qualifiers = "w360dp-h640dp-xxhdpi")
 class AppearanceSettingsTest {
     @get:Rule
     val rule = createComposeRule()
@@ -48,18 +49,17 @@ class AppearanceSettingsTest {
 
     @Test
     fun standardTypographyMatchesTheComfortableSizeAndTheTwoScalesStaySeparate() {
-        val standard = typographyFor(FontScale(FontScale.STANDARD))
-        val large = typographyFor(FontScale.of(115))
-        assertEquals(22f * 0.85f, standard.titleLarge.fontSize.value, 0.01f)
-        assertEquals(28f * 0.85f, standard.headlineMedium.fontSize.value, 0.01f)
-        assertEquals(16f * 0.85f, standard.bodyLarge.fontSize.value, 0.01f)
-        assertEquals(FontFamily.Serif, large.titleLarge.fontFamily)
-        assertEquals(22f * 0.85f * 1.15f, large.titleLarge.fontSize.value, 0.01f)
-        assertEquals(28f * 0.85f * 1.15f, large.titleLarge.lineHeight.value, 0.01f)
-        assertEquals(standard.labelMedium.fontSize.value * 1.15f, large.labelMedium.fontSize.value, 0.01f)
-        assertEquals(standard.labelLarge.fontSize.value * 1.15f, large.labelLarge.fontSize.value, 0.01f)
-        assertEquals(standard.bodyMedium.fontSize.value * 1.15f, large.bodyMedium.fontSize.value, 0.01f)
-        assertEquals(standard.headlineSmall.fontSize.value * 1.15f, large.headlineSmall.fontSize.value, 0.01f)
+        val standard = miuixTextStylesFor(FontScale(FontScale.STANDARD))
+        val large = miuixTextStylesFor(FontScale.of(115))
+        // Miuix 默认 17sp 的正文收小一档；标题和成段文字是衬线，界面标签不是。
+        assertEquals(17f * 0.9f, standard.main.fontSize.value, 0.01f)
+        assertEquals(20f * 0.9f, standard.title3.fontSize.value, 0.01f)
+        assertEquals(FontFamily.Serif, large.title3.fontFamily)
+        assertEquals(FontFamily.Serif, large.paragraph.fontFamily)
+        assertEquals(false, large.main.fontFamily == FontFamily.Serif)
+        assertEquals(standard.main.fontSize.value * 1.15f, large.main.fontSize.value, 0.01f)
+        assertEquals(standard.footnote1.fontSize.value * 1.15f, large.footnote1.fontSize.value, 0.01f)
+        assertEquals(standard.title1.fontSize.value * 1.15f, large.title1.fontSize.value, 0.01f)
         assertEquals(14.45f, articleBodyStyle(FontScale(FontScale.STANDARD)).fontSize.value, 0.01f)
         assertEquals(14.45f * 0.8f, articleBodyStyle(FontScale.of(80)).fontSize.value, 0.01f)
         assertEquals(23.8f * 1.3f, articleTitleStyle(FontScale.of(FontScale.MAX)).fontSize.value, 0.01f)
@@ -71,8 +71,8 @@ class AppearanceSettingsTest {
         val paper = colorsFor(PaletteChoice.fromStored(null), dark = false)
         val claude = colorsFor(PaletteChoice.fromStored("claude"), dark = false)
         val custom = colorsFor(PaletteChoice.custom(0x336699), dark = false)
-        assertEquals(paper.onBackground, custom.onBackground)
-        assertEquals(false, paper.background == claude.background)
+        assertEquals(paper.ink, custom.ink)
+        assertEquals(false, paper.paper == claude.paper)
         assertEquals(false, paper.primary == claude.primary)
         assertEquals(false, paper.primary == custom.primary)
         assertEquals(false, claude.primary == custom.primary)
@@ -91,16 +91,27 @@ class AppearanceSettingsTest {
         rule.setContent {
             val current by appearance
             MobWriterTheme(current) {
-                SetupScreen(
-                    initial = BlogSettings(owner = "example-owner", repo = "example-app", token = "token"),
-                    onSave = { saved = it },
-                    onClose = {},
-                    appearance = current,
-                    onAppearance = {
-                        appearance.value = it
-                        store.save(it)
-                    },
-                )
+                var page by remember { mutableStateOf("me") }
+                if (page == "me") {
+                    MeScreen(
+                        onOpenAccount = {},
+                        onOpenAppearance = { page = "look" },
+                        appearance = current,
+                        onAppearance = {
+                            appearance.value = it
+                            store.save(it)
+                        },
+                    ) { MainNavigationBar(MainTab.Me) {} }
+                } else {
+                    AppearanceScreen(
+                        appearance = current,
+                        onChange = {
+                            appearance.value = it
+                            store.save(it)
+                        },
+                        onClose = { page = "me" },
+                    )
+                }
             }
         }
         rule.onNodeWithText("外观").performClick()
@@ -108,7 +119,6 @@ class AppearanceSettingsTest {
         rule.onNodeWithText("文章字体大小").assertIsDisplayed()
         rule.onNodeWithText("界面上的文字会按这个大小显示。").assertIsDisplayed()
         rule.onNodeWithText("文章里的句子会按这个大小显示。").assertIsDisplayed()
-        rule.onNodeWithText("检查更新").assertDoesNotExist()
         rule.onNodeWithText("账户信息").assertDoesNotExist()
         rule.onNodeWithText("GitHub 令牌").assertDoesNotExist()
         rule.onNodeWithText("保存").assertDoesNotExist()
@@ -124,7 +134,6 @@ class AppearanceSettingsTest {
         rule.onNodeWithContentDescription("界面字体大小 标准").assertExists()
         rule.onNodeWithContentDescription("返回").performClick()
         rule.onNodeWithText("界面 标准 · 文章 130% · 墨哺").assertIsDisplayed()
-        rule.onNodeWithText("检查更新").assertIsDisplayed()
         rule.onNodeWithText("账户信息").assertIsDisplayed()
 
         rule.onNodeWithText("外观").performClick()
@@ -136,10 +145,8 @@ class AppearanceSettingsTest {
         rule.onNodeWithContentDescription("文章字体大小 130%").assertExists()
         rule.onNodeWithContentDescription("返回").performClick()
         rule.onNodeWithText("界面 70% · 文章 130% · 墨哺").assertIsDisplayed()
-        rule.onNodeWithText("检查更新").performClick()
         rule.onNodeWithText("界面字体大小").assertDoesNotExist()
         rule.onNodeWithText("账户信息").assertIsDisplayed()
-        rule.onNodeWithText("外观").assertIsDisplayed()
 
         val stored = AppearanceStore(context).load()
         assertEquals(FontScale.MIN, stored.ui.percent)
@@ -155,16 +162,27 @@ class AppearanceSettingsTest {
         rule.setContent {
             val current by appearance
             MobWriterTheme(current) {
-                SetupScreen(
-                    initial = BlogSettings(owner = "example-owner", repo = "example-app", token = "token"),
-                    onSave = { saved = it },
-                    onClose = {},
-                    appearance = current,
-                    onAppearance = {
-                        appearance.value = it
-                        store.save(it)
-                    },
-                )
+                var page by remember { mutableStateOf("me") }
+                if (page == "me") {
+                    MeScreen(
+                        onOpenAccount = {},
+                        onOpenAppearance = { page = "look" },
+                        appearance = current,
+                        onAppearance = {
+                            appearance.value = it
+                            store.save(it)
+                        },
+                    ) { MainNavigationBar(MainTab.Me) {} }
+                } else {
+                    AppearanceScreen(
+                        appearance = current,
+                        onChange = {
+                            appearance.value = it
+                            store.save(it)
+                        },
+                        onClose = { page = "me" },
+                    )
+                }
             }
         }
         rule.onNodeWithText("外观").performClick()
@@ -191,8 +209,8 @@ class AppearanceSettingsTest {
         val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).asImageBitmap()
         rule.setContent {
             MobWriterTheme(Appearance(ui = FontScale.of(FontScale.MAX))) {
-                MeScreen(onOpenSettings = {}, author = "Example", avatar = bitmap) {
-                    MobBottomBar(MainTab.Me) {}
+                MeScreen(onOpenAccount = {}, author = "Example", avatar = bitmap) {
+                    MainNavigationBar(MainTab.Me) {}
                 }
             }
         }
