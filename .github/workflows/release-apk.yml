@@ -97,7 +97,8 @@ jobs:
       - name: Install Android SDK packages
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-37" "build-tools;36.0.0"
+          # API 37 的平台包是 platforms;android-37.0，仓库里没有不带次版本号的 android-37。
+          sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
 
       - name: Run repository tests
         run: ./gradlew :core:test :app:test :app:lintDebug --build-cache
@@ -173,7 +174,8 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-37" "build-tools;36.0.0"
+          # API 37 的平台包是 platforms;android-37.0，仓库里没有不带次版本号的 android-37。
+          sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
 
       - name: Require stable signing
         if: steps.gate.outputs.skip != 'true'
