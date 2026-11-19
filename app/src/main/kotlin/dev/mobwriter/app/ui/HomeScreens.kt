@@ -984,7 +984,7 @@ private fun AccountSettingsForm(
                 InkField(owner, { owner = it }, "仓库所有者")
                 InkField(repo, { repo = it }, "仓库名")
                 InkField(branch, { branch = it }, "分支")
-                InkField(posts, { posts = it }, "文章目录")
+                InkField(posts, { posts = it }, "文章目录", supporting = "填写包含 Markdown 源文件的目录；只有 HTML 的站点目录无法读取文章")
             }
         }
         InkGroup("站点") {
@@ -1024,12 +1024,12 @@ private fun AccountSettingsForm(
                         supporting = "主题用来排序的字段，如 series_index。留空则不自动编号",
                     )
                     SwitchPreference(
-                        title = "对齐 Hexo 站点产物",
+                        title = "直接读写文章目录",
                         checked = publishToProduct,
                         onCheckedChange = { publishToProduct = it },
                     )
                     Text(
-                        "开启后把本仓库当作已构建的站点产物（如 `github.io` 仓库里的 `/blog` 子目录），直接读写 md 文章，不再读 _config.yml 和主题配置，发布后也不再触发自动构建；站点更新交给电脑端自行 hexo 构建部署。",
+                        "开启后直接读写指定目录中的 Markdown 源文件，不读取 Hexo 站点配置，发布后也不触发自动构建。已有文章需要先放到该目录。",
                         color = Muted,
                         style = MiuixTheme.textStyles.footnote1,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = (4.dp)),
@@ -1051,7 +1051,7 @@ private fun AccountSettingsForm(
             }
         }
         InkGroup("发布", padded = false) {
-            if (!publishToProduct) {
+            if (engine != SiteEngine.Hexo || !publishToProduct) {
                 SwitchPreference(
                     title = "发布后触发自动构建",
                     checked = autoBuild,
@@ -1062,7 +1062,7 @@ private fun AccountSettingsForm(
                 }
             } else {
                 Text(
-                    "已对齐站点产物：发布后不再触发自动构建，站点更新交给电脑端自行 hexo 构建部署。",
+                    "直接读写文章目录：发布后不触发自动构建。",
                     color = Muted,
                     style = MiuixTheme.textStyles.footnote1,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),

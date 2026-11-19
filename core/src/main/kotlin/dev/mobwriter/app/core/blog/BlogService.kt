@@ -13,6 +13,7 @@ import dev.mobwriter.app.core.model.PostSummary
 import dev.mobwriter.app.core.model.PublishReport
 import dev.mobwriter.app.core.model.SiteDefaults
 import dev.mobwriter.app.core.model.SiteEngine
+import dev.mobwriter.app.core.model.usesProductStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -73,7 +74,7 @@ class BlogService(
     fun loadAvatar(): ByteArray? = loadProfile().avatar
 
     private fun readProfile(): BlogProfile {
-        if (settings.engine == SiteEngine.Astro || settings.publishToProduct) return BlogProfile(avatarMissing = true)
+        if (settings.engine == SiteEngine.Astro || settings.usesProductStorage) return BlogProfile(avatarMissing = true)
         val siteYaml = readOptionalText("_config.yml") ?: return BlogProfile()
         val author = HexoAvatar.parseAuthor(siteYaml)
         val site = HexoAvatar.parseSite(siteYaml)
@@ -139,10 +140,10 @@ class BlogService(
                 github.delete(settings.owner, settings.repo, oldPath, "移出草稿：${document.title}", settings.branch, oldSha)
             }
         }
-        val build = if (asDraft || !settings.autoBuild || settings.publishToProduct) {
+        val build = if (asDraft || !settings.autoBuild || settings.usesProductStorage) {
             val skipped = when {
                 asDraft -> "已存成草稿，生成站点时不会带上它。"
-                settings.publishToProduct -> "已写入站点产物目录。下次在电脑上执行 hexo 构建/部署后，站点会同步这些新文章。"
+                settings.usesProductStorage -> "文章已写入仓库。自动构建未触发。"
                 else -> "已写入仓库。自动构建已关闭。"
             }
             BuildStatus.Skipped to skipped

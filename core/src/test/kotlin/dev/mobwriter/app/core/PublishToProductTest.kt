@@ -84,10 +84,25 @@ class PublishToProductTest {
         val report = service.publish(document)
 
         assertEquals(BuildStatus.Skipped, report.build)
-        assertTrue(report.detail.contains("产物目录"))
+        assertTrue(report.detail.contains("已写入仓库"))
         // 写入文章会调用 PUT，但不应触发 workflow_dispatch（POST .../dispatches）
         assertTrue(transport.seen.any { it.method == "PUT" }, "应写入产物目录中的文章")
         assertFalse(transport.seen.any { it.url.contains("/dispatches") }, "产物模式不应派发构建工作流：$transport")
+    }
+
+    @Test
+    fun astroStillDispatchesWhenHexoProductSettingIsEnabled() {
+        val transport = CapturingTransport()
+        val service = BlogService(
+            github = GitHubClient(transport, "token"),
+            settings = BlogSettings(
+                owner = "example", repo = "blog", branch = "main",
+                engine = SiteEngine.Astro, publishToProduct = true, autoBuild = true,
+            ),
+        )
+        val report = service.publish(PostDocument(title = "新文章", blocks = emptyList()))
+        assertEquals(BuildStatus.WorkflowMissing, report.build)
+        assertTrue(transport.hasDispatch())
     }
 
     @Test
