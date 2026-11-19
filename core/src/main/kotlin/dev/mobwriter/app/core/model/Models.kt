@@ -51,6 +51,13 @@ data class BlogSettings(
     val seriesFile: String = SiteDefaults.SERIES_FILE,
     val autoBuild: Boolean = true,
     val workflow: String = "publish.yml",
+    /**
+     * Hexo 专用。开启后把这个仓库当作已构建的站点产物（如 `github.io` 仓库里的 `/blog` 子目录），
+     * 而非 Hexo 源仓库：直接读写产物里的 md 文章，不再读 `_config.yml` 和主题配置，
+     * 发布后也不再触发 GitHub Actions 自动构建，站点更新交给电脑端自行 hexo 构建部署。
+     * Astro 模式下此项不生效。
+     */
+    val publishToProduct: Boolean = false,
     val token: String = "",
 )
 

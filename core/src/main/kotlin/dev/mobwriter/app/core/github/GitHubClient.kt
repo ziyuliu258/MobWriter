@@ -116,7 +116,7 @@ class GitHubClient(
     fun listDirectory(owner: String, repo: String, path: String, branch: String): List<RemoteEntry> {
         val response = call("GET", contentsUrl(owner, repo, path, branch), null)
         if (response.code == 404) {
-            throw BlogException("找不到目录 $path。请确认这是 Hexo 仓库，并且文章目录填写正确。", 404)
+            throw BlogException("找不到目录 $path。请确认仓库和文章目录填写正确，并且该目录存在。", 404)
         }
         ensure(response)
         val element = json.parseToJsonElement(response.text())

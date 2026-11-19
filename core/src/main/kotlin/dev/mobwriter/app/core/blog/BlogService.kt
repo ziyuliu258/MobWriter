@@ -73,7 +73,7 @@ class BlogService(
     fun loadAvatar(): ByteArray? = loadProfile().avatar
 
     private fun readProfile(): BlogProfile {
-        if (settings.engine == SiteEngine.Astro) return BlogProfile(avatarMissing = true)
+        if (settings.engine == SiteEngine.Astro || settings.publishToProduct) return BlogProfile(avatarMissing = true)
         val siteYaml = readOptionalText("_config.yml") ?: return BlogProfile()
         val author = HexoAvatar.parseAuthor(siteYaml)
         val site = HexoAvatar.parseSite(siteYaml)
@@ -139,8 +139,12 @@ class BlogService(
                 github.delete(settings.owner, settings.repo, oldPath, "移出草稿：${document.title}", settings.branch, oldSha)
             }
         }
-        val build = if (asDraft || !settings.autoBuild) {
-            val skipped = if (asDraft) "已存成草稿，生成站点时不会带上它。" else "已写入仓库。自动构建已关闭。"
+        val build = if (asDraft || !settings.autoBuild || settings.publishToProduct) {
+            val skipped = when {
+                asDraft -> "已存成草稿，生成站点时不会带上它。"
+                settings.publishToProduct -> "已写入站点产物目录。下次在电脑上执行 hexo 构建/部署后，站点会同步这些新文章。"
+                else -> "已写入仓库。自动构建已关闭。"
+            }
             BuildStatus.Skipped to skipped
         } else {
             dispatch()

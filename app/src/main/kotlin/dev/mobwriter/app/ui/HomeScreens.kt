@@ -916,6 +916,7 @@ private fun AccountSettingsForm(
     var workflow by remember { mutableStateOf(initial.workflow) }
     var autoBuild by remember { mutableStateOf(initial.autoBuild) }
     var engine by remember { mutableStateOf(initial.engine) }
+    var publishToProduct by remember { mutableStateOf(initial.publishToProduct) }
     var imageMode by remember { mutableStateOf(initial.imageMode) }
     var imageDirectory by remember { mutableStateOf(initial.imageDirectory) }
     var assetsDirectory by remember { mutableStateOf(initial.assetsDirectory) }
@@ -945,6 +946,7 @@ private fun AccountSettingsForm(
                             assetsDirectory = assetsDirectory,
                             seriesIndexKey = seriesIndexKey,
                             seriesFile = seriesFile,
+                            publishToProduct = publishToProduct,
                             autoBuild = autoBuild,
                             workflow = workflow,
                             token = tokenToStore,
@@ -1021,6 +1023,17 @@ private fun AccountSettingsForm(
                         "系列序号字段，可不填",
                         supporting = "主题用来排序的字段，如 series_index。留空则不自动编号",
                     )
+                    SwitchPreference(
+                        title = "对齐 Hexo 站点产物",
+                        checked = publishToProduct,
+                        onCheckedChange = { publishToProduct = it },
+                    )
+                    Text(
+                        "开启后把本仓库当作已构建的站点产物（如 `github.io` 仓库里的 `/blog` 子目录），直接读写 md 文章，不再读 _config.yml 和主题配置，发布后也不再触发自动构建；站点更新交给电脑端自行 hexo 构建部署。",
+                        color = Muted,
+                        style = MiuixTheme.textStyles.footnote1,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = (4.dp)),
+                    )
                 } else {
                     InkField(
                         assetsDirectory,
@@ -1038,13 +1051,22 @@ private fun AccountSettingsForm(
             }
         }
         InkGroup("发布", padded = false) {
-            SwitchPreference(
-                title = "发布后触发自动构建",
-                checked = autoBuild,
-                onCheckedChange = { autoBuild = it },
-            )
-            FormColumn {
-                InkField(workflow, { workflow = it }, "工作流文件名")
+            if (!publishToProduct) {
+                SwitchPreference(
+                    title = "发布后触发自动构建",
+                    checked = autoBuild,
+                    onCheckedChange = { autoBuild = it },
+                )
+                FormColumn {
+                    InkField(workflow, { workflow = it }, "工作流文件名")
+                }
+            } else {
+                Text(
+                    "已对齐站点产物：发布后不再触发自动构建，站点更新交给电脑端自行 hexo 构建部署。",
+                    color = Muted,
+                    style = MiuixTheme.textStyles.footnote1,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                )
             }
         }
         } }
